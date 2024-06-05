@@ -34,6 +34,13 @@
 
 #include <cub/config.cuh>
 
+#include <type_traits>
+
+#include "cub/detail/type_traits.cuh"
+#include "cub/util_type.cuh"
+#include "thrust/iterator/transform_iterator.h"
+#include "thrust/iterator/transform_output_iterator.h"
+
 #if defined(_CCCL_IMPLICIT_SYSTEM_HEADER_GCC)
 #  pragma GCC system_header
 #elif defined(_CCCL_IMPLICIT_SYSTEM_HEADER_CLANG)
@@ -44,6 +51,7 @@
 
 #include <cub/detail/choose_offset.cuh>
 #include <cub/detail/nvtx.cuh>
+#include <cub/detail/rfa.cuh>
 #include <cub/device/dispatch/dispatch_reduce.cuh>
 #include <cub/device/dispatch/dispatch_reduce_by_key.cuh>
 #include <cub/iterator/arg_index_input_iterator.cuh>
@@ -341,6 +349,84 @@ struct DeviceReduce
     CUB_DETAIL_RUNTIME_DEBUG_SYNC_USAGE_LOG
 
     return Sum<InputIteratorT, OutputIteratorT>(d_temp_storage, temp_storage_bytes, d_in, d_out, num_items, stream);
+  }
+
+  template <typename FloatType = float, typename std::enable_if_t<std::is_floating_point_v<FloatType>>* = nullptr>
+  struct deterministic_sum_t
+  {
+    using DeterministicAcc = detail::ReproducibleFloatingAccumulator<FloatType>;
+
+    __device__ DeterministicAcc operator()(DeterministicAcc acc, FloatType f)
+    {
+      acc.add(f);
+      return acc;
+    }
+
+    __device__ DeterministicAcc operator()(FloatType f, DeterministicAcc acc)
+    {
+      acc.add(f);
+      return acc;
+    }
+
+    __device__ DeterministicAcc operator()(DeterministicAcc lhs, DeterministicAcc rhs)
+    {
+      DeterministicAcc rtn = lhs;
+      rtn += rhs;
+      return rtn;
+    }
+  };
+
+  template <typename InputIteratorT, typename OutputIteratorT, typename NumItemsT>
+  CUB_RUNTIME_FUNCTION static cudaError_t DeterministicSum(
+    void* d_temp_storage,
+    size_t& temp_storage_bytes,
+    InputIteratorT d_in,
+    OutputIteratorT d_out,
+    NumItemsT num_items,
+    cudaStream_t stream = 0)
+  {
+    CUB_DETAIL_NVTX_RANGE_SCOPE_IF(d_temp_storage, "cub::DeviceReduce::DeterministicSum");
+
+    // Signed integer type for global offsets
+    using OffsetT = detail::choose_offset_t<NumItemsT>;
+
+    // The output value type
+    using OutputT = cub::detail::non_void_value_t<OutputIteratorT, cub::detail::value_t<InputIteratorT>>;
+
+    static_assert(std::is_floating_point_v<OutputT>, "It can be a float or a double");
+
+    using InitT = OutputT;
+
+    using accum_t               = cub::detail::accumulator_t<cub::Sum, InitT, cub::detail::value_t<InputIteratorT>>;
+    using deterministic_add_t   = deterministic_sum_t<accum_t>;
+    using deterministic_accum_t = typename deterministic_add_t::DeterministicAcc;
+    // using accum_t     = typename binary_op_t::DeterministicAcc;
+
+    using AcumFloatTransformT = detail::rfa_float_transform_t<accum_t>;
+
+    using OutputIteratorTransformT = thrust::transform_output_iterator<AcumFloatTransformT, OutputIteratorT>;
+    OutputIteratorTransformT d_out_transformed = thrust::make_transform_output_iterator(d_out, AcumFloatTransformT{});
+
+    cub::detail::RFA_bins<OutputT> bins;
+    bins.initialize_bins();
+    memcpy(cub::detail::bin_host_buffer, &bins, sizeof(bins));
+
+    cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
+
+    return DispatchReduce<
+      InputIteratorT,
+      OutputIteratorTransformT,
+      OffsetT,
+      deterministic_add_t,
+      InitT,
+      deterministic_accum_t>::Dispatch(d_temp_storage,
+                                       temp_storage_bytes,
+                                       d_in,
+                                       d_out_transformed,
+                                       static_cast<OffsetT>(num_items),
+                                       deterministic_add_t{},
+                                       InitT{}, // zero-initialize
+                                       stream);
   }
 
   //! @rst
