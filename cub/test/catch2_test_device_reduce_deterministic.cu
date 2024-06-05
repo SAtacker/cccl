@@ -31,13 +31,7 @@
 #include <cub/detail/rfa.cuh>
 
 #include <thrust/device_vector.h>
-#include <thrust/iterator/transform_output_iterator.h>
 
-#include <type_traits>
-
-#include "c2h/custom_type.cuh"
-#include "c2h/extended_types.cuh"
-#include "catch2_test_device_reduce.cuh"
 #include "catch2_test_helper.h"
 #include "catch2_test_launch_helper.h"
 #include <catch2/catch.hpp>
@@ -48,27 +42,19 @@ DECLARE_LAUNCH_WRAPPER(cub::DeviceReduce::DeterministicSum, deterministic_sum);
 
 using float_type_list = c2h::type_list<float, double>;
 
-//// HIDDEN
-
-/////////
-
 CUB_TEST("Deterministic Device reduce works with float and double", "[reduce][deterministic]", float_type_list)
 {
+  using type = typename c2h::get<0, TestType>;
+
   int num_items = 42;
-  thrust::device_vector<float> input(num_items, 1.0f);
-  thrust::device_vector<float> output(1);
+  thrust::device_vector<type> input(num_items, 1.0f);
+  thrust::device_vector<type> output(1);
 
-  ///////// HIDDEN
-
-  //////////////
-
-  //// ----NA
-
-  const float* d_input = thrust::raw_pointer_cast(input.data());
+  const type* d_input = thrust::raw_pointer_cast(input.data());
 
   deterministic_sum(d_input, output.begin(), num_items);
 
-  float const res = output[0];
+  type const res = output[0];
 
   REQUIRE(res == num_items);
 }
