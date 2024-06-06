@@ -376,7 +376,25 @@ struct DeviceReduce
     }
   };
 
-  template <typename InputIteratorT, typename OutputIteratorT, typename NumItemsT>
+  struct empty_policy
+  {};
+
+  template <typename T, typename A, typename O, typename M, typename K = void>
+  struct get_policy
+  {
+    using type = T;
+  };
+
+  template <typename T, typename A, typename O, typename M>
+  struct get_policy<T, A, O, M, std::enable_if_t<!std::is_same_v<T, empty_policy>>>
+  {
+    using type = typename T::template policy<A, O, M>;
+  };
+
+  template <typename T, typename A, typename O, typename M>
+  using get_policy_t = typename get_policy<T, A, O, M>::type;
+
+  template <typename InputIteratorT, typename OutputIteratorT, typename NumItemsT, typename SelectedPolicy = empty_policy>
   CUB_RUNTIME_FUNCTION static cudaError_t DeterministicSum(
     void* d_temp_storage,
     size_t& temp_storage_bytes,
@@ -400,7 +418,6 @@ struct DeviceReduce
     using accum_t               = cub::detail::accumulator_t<cub::Sum, InitT, cub::detail::value_t<InputIteratorT>>;
     using deterministic_add_t   = deterministic_sum_t<accum_t>;
     using deterministic_accum_t = typename deterministic_add_t::DeterministicAcc;
-    // using accum_t     = typename binary_op_t::DeterministicAcc;
 
     using AcumFloatTransformT = detail::rfa_float_transform_t<accum_t>;
 
@@ -413,20 +430,27 @@ struct DeviceReduce
 
     cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
 
+    using default_policy_t = DeviceReducePolicy<deterministic_accum_t, OffsetT, deterministic_add_t>;
+    using policy_t =
+      std::conditional_t<std::is_same_v<SelectedPolicy, empty_policy>,
+                         default_policy_t,
+                         get_policy_t<SelectedPolicy, deterministic_accum_t, OffsetT, deterministic_add_t>>;
+
     return DispatchReduce<
       InputIteratorT,
       OutputIteratorTransformT,
       OffsetT,
       deterministic_add_t,
       InitT,
-      deterministic_accum_t>::Dispatch(d_temp_storage,
-                                       temp_storage_bytes,
-                                       d_in,
-                                       d_out_transformed,
-                                       static_cast<OffsetT>(num_items),
-                                       deterministic_add_t{},
-                                       InitT{}, // zero-initialize
-                                       stream);
+      deterministic_accum_t,
+      policy_t>::Dispatch(d_temp_storage,
+                          temp_storage_bytes,
+                          d_in,
+                          d_out_transformed,
+                          static_cast<OffsetT>(num_items),
+                          deterministic_add_t{},
+                          InitT{}, // zero-initialize
+                          stream);
   }
 
   //! @rst
