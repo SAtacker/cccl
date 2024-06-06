@@ -38,6 +38,98 @@
 
 // %PARAM% TEST_LAUNCH lid 0:1:2
 
+template <int tpb = 256, int itpt = 20, int ipvl = 2>
+struct custom_values
+{
+  const int threads_per_block  = tpb;
+  const int items_per_thread   = itpt;
+  const int items_per_vec_load = ipvl;
+};
+
+template <custom_values& c1, custom_values& c2, custom_values& c3>
+struct DeterministicDeviceReducePolicyHubTemplate
+{
+  template <typename AccumT, typename OffsetT, typename ReductionOpT>
+  struct policy
+  {
+    //---------------------------------------------------------------------------
+    // Architecture-specific tuning policies
+    //---------------------------------------------------------------------------
+
+    /// SM30
+    struct Policy300 : cub::ChainedPolicy<300, Policy300, Policy300>
+    {
+      static constexpr int threads_per_block  = c1.threads_per_block;
+      static constexpr int items_per_thread   = c1.items_per_thread;
+      static constexpr int items_per_vec_load = c1.items_per_vec_load;
+
+      // ReducePolicy (GTX670: 154.0 @ 48M 4B items)
+      using ReducePolicy =
+        cub::AgentReducePolicy<threads_per_block,
+                               items_per_thread,
+                               AccumT,
+                               items_per_vec_load,
+                               cub::BLOCK_REDUCE_WARP_REDUCTIONS,
+                               cub::LOAD_DEFAULT>;
+
+      // SingleTilePolicy
+      using SingleTilePolicy = ReducePolicy;
+
+      // SegmentedReducePolicy
+      using SegmentedReducePolicy = ReducePolicy;
+    };
+
+    /// SM35
+    struct Policy350 : cub::ChainedPolicy<350, Policy350, Policy300>
+    {
+      static constexpr int threads_per_block  = c2.threads_per_block;
+      static constexpr int items_per_thread   = c2.items_per_thread;
+      static constexpr int items_per_vec_load = c2.items_per_vec_load;
+
+      // ReducePolicy (GTX Titan: 255.1 GB/s @ 48M 4B items; 228.7 GB/s @ 192M 1B
+      // items)
+      using ReducePolicy =
+        cub::AgentReducePolicy<threads_per_block,
+                               items_per_thread,
+                               AccumT,
+                               items_per_vec_load,
+                               cub::BLOCK_REDUCE_WARP_REDUCTIONS,
+                               cub::LOAD_LDG>;
+
+      // SingleTilePolicy
+      using SingleTilePolicy = ReducePolicy;
+
+      // SegmentedReducePolicy
+      using SegmentedReducePolicy = ReducePolicy;
+    };
+
+    /// SM60
+    struct Policy600 : cub::ChainedPolicy<600, Policy600, Policy350>
+    {
+      static constexpr int threads_per_block  = c3.threads_per_block;
+      static constexpr int items_per_thread   = c3.items_per_thread;
+      static constexpr int items_per_vec_load = c3.items_per_vec_load;
+
+      // ReducePolicy (P100: 591 GB/s @ 64M 4B items; 583 GB/s @ 256M 1B items)
+      using ReducePolicy =
+        cub::AgentReducePolicy<threads_per_block,
+                               items_per_thread,
+                               AccumT,
+                               items_per_vec_load,
+                               cub::BLOCK_REDUCE_WARP_REDUCTIONS,
+                               cub::LOAD_LDG>;
+
+      // SingleTilePolicy
+      using SingleTilePolicy = ReducePolicy;
+
+      // SegmentedReducePolicy
+      using SegmentedReducePolicy = ReducePolicy;
+    };
+
+    using MaxPolicy = Policy300;
+  };
+};
+
 DECLARE_LAUNCH_WRAPPER(cub::DeviceReduce::DeterministicSum, deterministic_sum);
 
 using float_type_list = c2h::type_list<float, double>;
@@ -46,15 +138,74 @@ CUB_TEST("Deterministic Device reduce works with float and double", "[reduce][de
 {
   using type = typename c2h::get<0, TestType>;
 
-  int num_items = 42;
-  thrust::device_vector<type> input(num_items, 1.0f);
-  thrust::device_vector<type> output(1);
+  SECTION("base test")
+  {
+    const int num_items = 42;
+    thrust::device_vector<type> input(num_items, 1.0f);
+    thrust::device_vector<type> output(1);
 
-  const type* d_input = thrust::raw_pointer_cast(input.data());
+    const type* d_input = thrust::raw_pointer_cast(input.data());
 
-  deterministic_sum(d_input, output.begin(), num_items);
+    deterministic_sum(d_input, output.begin(), num_items);
 
-  type const res = output[0];
+    type const res = output[0];
 
-  REQUIRE(res == num_items);
+    REQUIRE(res == num_items);
+  }
+
+  SECTION("custom policy test")
+  {
+    const int num_items = 42;
+    thrust::device_vector<type> input(num_items, 1.0f);
+    thrust::device_vector<type> output(1);
+
+    const type* d_input = thrust::raw_pointer_cast(input.data());
+
+    std::size_t temp_storage_bytes{};
+
+    custom_values c1, c2, c3;
+    cub::DeviceReduce::DeterministicSum<decltype(d_input),
+                                        decltype(output.begin()),
+                                        int,
+                                        DeterministicDeviceReducePolicyHubTemplate<c1, c2, c3>>(
+      nullptr, temp_storage_bytes, d_input, output.begin(), num_items);
+    c2h::device_vector<std::uint8_t> temp_storage(temp_storage_bytes);
+    cub::DeviceReduce::DeterministicSum<decltype(d_input),
+                                        decltype(output.begin()),
+                                        int,
+                                        DeterministicDeviceReducePolicyHubTemplate<c1, c2, c3>>(
+      thrust::raw_pointer_cast(temp_storage.data()), temp_storage_bytes, d_input, output.begin(), num_items);
+
+    type const res = output[0];
+
+    REQUIRE(res == num_items);
+  }
+
+  SECTION("custom policy test with custom values")
+  {
+    const int num_items = 42;
+    thrust::device_vector<type> input(num_items, 1.0f);
+    thrust::device_vector<type> output(1);
+
+    const type* d_input = thrust::raw_pointer_cast(input.data());
+
+    std::size_t temp_storage_bytes{};
+
+    custom_values<128, 128, 128> c1, c2, c3;
+    cub::DeviceReduce::DeterministicSum<decltype(d_input),
+                                        decltype(output.begin()),
+                                        int,
+                                        DeterministicDeviceReducePolicyHubTemplate<c1, c2, c3>>(
+      nullptr, temp_storage_bytes, d_input, output.begin(), num_items);
+    c2h::device_vector<std::uint8_t> temp_storage(temp_storage_bytes);
+    cub::DeviceReduce::DeterministicSum<decltype(d_input),
+                                        decltype(output.begin()),
+                                        int,
+                                        DeterministicDeviceReducePolicyHubTemplate<c1, c2, c3>>(
+      thrust::raw_pointer_cast(temp_storage.data()), temp_storage_bytes, d_input, output.begin(), num_items);
+
+    type const res = output[0];
+
+    REQUIRE(res == num_items);
+  }
 }
