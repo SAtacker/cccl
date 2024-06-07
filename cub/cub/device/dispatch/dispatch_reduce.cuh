@@ -45,6 +45,7 @@
 #endif // no system header
 
 #include <cub/agent/agent_reduce.cuh>
+#include <cub/detail/rfa.cuh>
 #include <cub/grid/grid_even_share.cuh>
 #include <cub/iterator/arg_index_input_iterator.cuh>
 #include <cub/thread/thread_operators.cuh>
@@ -57,6 +58,9 @@
 #include <thrust/system/cuda/detail/core/triple_chevron_launch.h>
 
 #include <iterator>
+
+#include "thrust/iterator/transform_iterator.h"
+#include "thrust/iterator/transform_output_iterator.h"
 
 _CCCL_SUPPRESS_DEPRECATED_PUSH
 #include <cuda/std/functional>
@@ -1408,5 +1412,147 @@ struct DispatchSegmentedReduce : SelectedPolicy
       stream);
   }
 };
+
+namespace detail
+{
+
+template <typename ReductionOpT, typename InitT, typename InputIteratorT>
+using AccumT = detail::accumulator_t<ReductionOpT, InitT, cub::detail::value_t<InputIteratorT>>;
+
+template <typename OutputIteratorT, typename InputIteratorT>
+using InitT = cub::detail::non_void_value_t<OutputIteratorT, cub::detail::value_t<InputIteratorT>>;
+/******************************************************************************
+ * Single-problem dispatch
+ *****************************************************************************/
+
+/**
+ * @brief Utility class for dispatching the appropriately-tuned kernels for
+ *        device-wide reduction in deterministic fashion
+ *
+ * @tparam InputIteratorT
+ *   Random-access input iterator type for reading input items @iterator
+ *
+ * @tparam OutputIteratorT
+ *   Output iterator type for recording the reduced aggregate @iterator
+ *
+ * @tparam OffsetT
+ *   Signed integer type for global offsets
+ *
+ * @tparam InitT
+ *   Initial value type
+ */
+template <
+  typename InputIteratorT,
+  typename OutputIteratorT,
+  typename OffsetT,
+  typename SelectedPolicy =
+    DeviceReducePolicy<AccumT<cub::Sum, InitT<OutputIteratorT, InputIteratorT>, InputIteratorT>, OffsetT, cub::Sum>,
+  typename TransformOpT = ::cuda::std::__identity>
+struct DeterministicDispatchReduce : SelectedPolicy
+{
+  template <typename FloatType = float, typename std::enable_if_t<std::is_floating_point_v<FloatType>>* = nullptr>
+  struct deterministic_sum_t
+  {
+    using DeterministicAcc = detail::ReproducibleFloatingAccumulator<FloatType>;
+
+    __device__ DeterministicAcc operator()(DeterministicAcc acc, FloatType f)
+    {
+      acc.add(f);
+      return acc;
+    }
+
+    __device__ DeterministicAcc operator()(FloatType f, DeterministicAcc acc)
+    {
+      acc.add(f);
+      return acc;
+    }
+
+    __device__ DeterministicAcc operator()(DeterministicAcc lhs, DeterministicAcc rhs)
+    {
+      DeterministicAcc rtn = lhs;
+      rtn += rhs;
+      return rtn;
+    }
+  };
+
+  /**
+   * @brief Internal dispatch routine for computing a device-wide deterministic reduction
+   *
+   * @param[in] d_temp_storage
+   *   Device-accessible allocation of temporary storage. When `nullptr`, the
+   *   required allocation size is written to `temp_storage_bytes` and no work
+   *   is done.
+   *
+   * @param[in,out] temp_storage_bytes
+   *   Reference to size in bytes of `d_temp_storage` allocation
+   *
+   * @param[in] d_in
+   *   Pointer to the input sequence of data items
+   *
+   * @param[out] d_out
+   *   Pointer to the output aggregate
+   *
+   * @param[in] num_items
+   *   Total number of input items (i.e., length of `d_in`)
+   *
+   * @param[in] reduction_op
+   *   Binary reduction functor
+   *
+   * @param[in] init
+   *   The initial value of the reduction
+   *
+   * @param[in] stream
+   *   **[optional]** CUDA stream to launch kernels within.
+   *   Default is stream<sub>0</sub>.
+   */
+  CUB_RUNTIME_FUNCTION _CCCL_FORCEINLINE static cudaError_t Dispatch(
+    void* d_temp_storage,
+    size_t& temp_storage_bytes,
+    InputIteratorT d_in,
+    OutputIteratorT d_out,
+    OffsetT num_items,
+    InitT<OutputIteratorT, InputIteratorT> init = {},
+    cudaStream_t stream                         = {},
+    TransformOpT transform_op                   = {})
+  {
+    using init_t                = InitT<OutputIteratorT, InputIteratorT>;
+    using accum_t               = AccumT<cub::Sum, init_t, InputIteratorT>;
+    using deterministic_add_t   = deterministic_sum_t<accum_t>;
+    using deterministic_accum_t = typename deterministic_add_t::DeterministicAcc;
+
+    using AcumFloatTransformT = detail::rfa_float_transform_t<accum_t>;
+
+    using OutputIteratorTransformT = thrust::transform_output_iterator<AcumFloatTransformT, OutputIteratorT>;
+
+    using dispatch_reduce_t =
+      DispatchReduce<InputIteratorT,
+                     OutputIteratorTransformT,
+                     OffsetT,
+                     deterministic_add_t,
+                     init_t,
+                     deterministic_accum_t,
+                     SelectedPolicy>;
+
+    OutputIteratorTransformT d_out_transformed = thrust::make_transform_output_iterator(d_out, AcumFloatTransformT{});
+
+    cub::detail::RFA_bins<accum_t> bins;
+    bins.initialize_bins();
+    memcpy(cub::detail::bin_host_buffer, &bins, sizeof(bins));
+
+    cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
+
+    return dispatch_reduce_t::Dispatch(
+      d_temp_storage,
+      temp_storage_bytes,
+      d_in,
+      d_out_transformed,
+      num_items,
+      deterministic_add_t{},
+      init,
+      stream,
+      transform_op);
+  }
+};
+} // namespace detail
 
 CUB_NAMESPACE_END
