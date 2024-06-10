@@ -443,7 +443,7 @@ private:
       int shift = binned_index() - X_index;
       if (shift > 0)
       {
-#pragma unroll
+        // #pragma unroll
         for (int i = FOLD - 1; i >= 1; i--)
         {
           if (i < shift)
@@ -454,7 +454,7 @@ private:
           carry(i * inccarY)   = carry((i - shift) * inccarY);
         }
         const ftype* const bins = binned_bins(X_index);
-#pragma unroll
+        // #pragma unroll
         for (int j = 0; j < FOLD; j++)
         {
           if (j >= shift)
@@ -497,7 +497,7 @@ private:
       M *= EXPANSION * 0.5;
       x += M;
       x += M;
-#pragma unroll
+      // #pragma unroll
       for (int i = 1; i < FOLD - 1; i++)
       {
         M  = primary(i * incpriY);
@@ -516,7 +516,7 @@ private:
     {
       ftype qd = x;
       auto& ql = get_bits(qd);
-#pragma unroll
+      // #pragma unroll
       for (int i = 0; i < FOLD - 1; i++)
       {
         M  = primary(i * incpriY);
@@ -732,7 +732,7 @@ private:
     {
       const auto* const bins = binned_bins(Y_index);
       // shift Y upwards and add X to Y
-#pragma unroll
+      // #pragma unroll
       for (int i = FOLD - 1; i >= 1; i--)
       {
         if (i < shift)
@@ -742,7 +742,7 @@ private:
         primary(i * incpriY) = x.primary(i * incpriX) + (primary((i - shift) * incpriY) - bins[i - shift]);
         carry(i * inccarY)   = x.carry(i * inccarX) + carry((i - shift) * inccarY);
       }
-#pragma unroll
+      // #pragma unroll
       for (int i = 0; i < FOLD; i++)
       {
         if (i == shift)
@@ -757,7 +757,7 @@ private:
     {
       const auto* const bins = binned_bins(X_index);
       // shift X upwards and add X to Y
-#pragma unroll
+      // #pragma unroll
       for (int i = 0; i < FOLD; i++)
       {
         if (i < -shift)
@@ -772,7 +772,7 @@ private:
     {
       const auto* const bins = binned_bins(X_index);
       // add X to Y
-#pragma unroll
+      // #pragma unroll
       for (int i = 0; i < FOLD; i++)
       {
         primary(i * incpriY) += x.primary(i * incpriX) - bins[i];

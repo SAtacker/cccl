@@ -361,31 +361,6 @@ struct DeviceReduce
   {
     CUB_DETAIL_NVTX_RANGE_SCOPE_IF(d_temp_storage, "cub::DeviceReduce::DeterministicSum");
 
-    // // Signed integer type for global offsets
-    // using OffsetT = detail::choose_offset_t<NumItemsT>;
-
-    // // The output value type
-    // using OutputT = cub::detail::non_void_value_t<OutputIteratorT, cub::detail::value_t<InputIteratorT>>;
-
-    // // static_assert(std::is_floating_point_v<OutputT>, "It can be a float or a double");
-
-    // using InitT = OutputT;
-
-    // return DispatchReduce<
-    //   InputIteratorT,
-    //   OutputIteratorTransformT,
-    //   OffsetT,
-    //   deterministic_add_t,
-    //   InitT,
-    //   deterministic_accum_t>::Dispatch(d_temp_storage,
-    //                       temp_storage_bytes,
-    //                       d_in,
-    //                       d_out_transformed,
-    //                       static_cast<OffsetT>(num_items),
-    //                       deterministic_add_t{},
-    //                       InitT{}, // zero-initialize
-    //                       stream);
-
     // Signed integer type for global offsets
     using OffsetT = detail::choose_offset_t<NumItemsT>;
 

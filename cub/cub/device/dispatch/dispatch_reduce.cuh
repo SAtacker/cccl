@@ -1425,6 +1425,31 @@ using InitT = cub::detail::non_void_value_t<OutputIteratorT, cub::detail::value_
  * Single-problem dispatch
  *****************************************************************************/
 
+template <typename FloatType = float, typename std::enable_if_t<std::is_floating_point_v<FloatType>>* = nullptr>
+struct deterministic_sum_t
+{
+  using DeterministicAcc = detail::ReproducibleFloatingAccumulator<FloatType>;
+
+  __host__ __device__ DeterministicAcc operator()(DeterministicAcc acc, FloatType f)
+  {
+    acc.add(f);
+    return acc;
+  }
+
+  __host__ __device__ DeterministicAcc operator()(FloatType f, DeterministicAcc acc)
+  {
+    acc.add(f);
+    return acc;
+  }
+
+  __host__ __device__ DeterministicAcc operator()(DeterministicAcc lhs, DeterministicAcc rhs)
+  {
+    DeterministicAcc rtn = lhs;
+    rtn += rhs;
+    return rtn;
+  }
+};
+
 /**
  * @brief Utility class for dispatching the appropriately-tuned kernels for
  *        device-wide reduction in deterministic fashion
@@ -1450,31 +1475,6 @@ template <
   typename TransformOpT = ::cuda::std::__identity>
 struct DeterministicDispatchReduce : SelectedPolicy
 {
-  template <typename FloatType = float, typename std::enable_if_t<std::is_floating_point_v<FloatType>>* = nullptr>
-  struct deterministic_sum_t
-  {
-    using DeterministicAcc = detail::ReproducibleFloatingAccumulator<FloatType>;
-
-    __device__ DeterministicAcc operator()(DeterministicAcc acc, FloatType f)
-    {
-      acc.add(f);
-      return acc;
-    }
-
-    __device__ DeterministicAcc operator()(FloatType f, DeterministicAcc acc)
-    {
-      acc.add(f);
-      return acc;
-    }
-
-    __device__ DeterministicAcc operator()(DeterministicAcc lhs, DeterministicAcc rhs)
-    {
-      DeterministicAcc rtn = lhs;
-      rtn += rhs;
-      return rtn;
-    }
-  };
-
   /**
    * @brief Internal dispatch routine for computing a device-wide deterministic reduction
    *
