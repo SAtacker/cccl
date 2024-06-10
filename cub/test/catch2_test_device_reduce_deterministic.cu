@@ -77,10 +77,11 @@ struct hub_t
   using MaxPolicy = Policy;
 };
 
-template <typename type>
-void deterministic_reduce_1()
+
+template <typename type, int N = 42>
+void deterministic_reduce()
 {
-  const int num_items = 42;
+  const int num_items = N;
   c2h::device_vector<type> input(num_items);
   c2h::gen(CUB_SEED(2), input);
   c2h::device_vector<type> output_p1(1);
@@ -138,5 +139,65 @@ CUB_TEST("Deterministic Device reduce works with float and double and is determi
          float_type_list)
 {
   using type = typename c2h::get<0, TestType>;
-  deterministic_reduce_1<type>();
+  deterministic_reduce<type>();
 }
+
+CUB_TEST("Deterministic Device reduce works with float and double and is deterministic with 0 elements",
+         "[reduce][deterministic]",
+         float_type_list)
+{
+  using type = typename c2h::get<0, TestType>;
+  deterministic_reduce<type, 0>();
+}
+
+
+CUB_TEST("Deterministic Device reduce works with float and double and is deterministic with 1 element",
+         "[reduce][deterministic]",
+         float_type_list)
+{
+  using type = typename c2h::get<0, TestType>;
+  deterministic_reduce<type, 1>();
+}
+
+CUB_TEST("Deterministic Device reduce works with float and double and is deterministic with 2 elements",
+         "[reduce][deterministic]",
+         float_type_list)
+{
+  using type = typename c2h::get<0, TestType>;
+  deterministic_reduce<type, 2>();
+}
+
+
+CUB_TEST("Deterministic Device reduce works with float and double and is deterministic with 1000 elements",
+         "[reduce][deterministic]",
+         float_type_list)
+{
+  using type = typename c2h::get<0, TestType>;
+  deterministic_reduce<type, 1000>();
+}
+
+CUB_TEST("Deterministic Device reduce works with float and double and is deterministic with 100000 elements",
+         "[reduce][deterministic]",
+         float_type_list)
+{
+  using type = typename c2h::get<0, TestType>;
+  deterministic_reduce<type, 100000>();
+}
+
+
+CUB_TEST("Deterministic Device reduce works with float and double and is deterministic with 1000'000 elements",
+         "[reduce][deterministic]",
+         float_type_list)
+{
+  using type = typename c2h::get<0, TestType>;
+  deterministic_reduce<type, 1000'000>();
+}
+
+CUB_TEST("Deterministic Device reduce works with float and double and is deterministic with 1000'000'000 elements",
+         "[reduce][deterministic]",
+         float_type_list)
+{
+  using type = typename c2h::get<0, TestType>;
+  deterministic_reduce<type, 1000'000'000>();
+}
+
