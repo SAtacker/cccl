@@ -41,31 +41,6 @@
 
 // %PARAM% TEST_LAUNCH lid 0:1:2
 
-// // today
-// float levels[42];
-// runtime_populate(levels);
-
-// // shreyes
-
-// template <class Limit>
-// constexpr float next_limit()
-// {
-//   return compile_time_compute_next(Limit);
-// }
-
-// template <float Limit>
-// int limit(float x, int bin)
-// {
-//   if (Limit < x)
-//   {
-//     return bin;
-//   }
-//   else
-//   {
-//     return limit<next_limit<Limit>>(x, bin + 1);
-//   }
-// }
-
 using float_type_list = c2h::type_list<float, double>;
 
 template <int NOMINAL_BLOCK_THREADS_4B, int NOMINAL_ITEMS_PER_THREAD_4B>
@@ -103,12 +78,13 @@ struct hub_t
 };
 
 template <typename type>
-void reduce_1()
+void deterministic_reduce_1()
 {
   const int num_items = 42;
-  thrust::device_vector<type> input(num_items, 1.0f);
-  thrust::device_vector<type> output_p1(1);
-  thrust::device_vector<type> output_p2(1);
+  c2h::device_vector<type> input(num_items);
+  c2h::gen(CUB_SEED(2), input);
+  c2h::device_vector<type> output_p1(1);
+  c2h::device_vector<type> output_p2(1);
 
   const type* d_input = thrust::raw_pointer_cast(input.data());
 
@@ -140,14 +116,13 @@ void reduce_1()
 }
 
 DECLARE_LAUNCH_WRAPPER(cub::DeviceReduce::DeterministicSum, deterministic_sum);
-// DECLARE_LAUNCH_WRAPPER(, 000reduce_2);
 
 CUB_TEST("Deterministic Device reduce works with float and double", "[reduce][deterministic]", float_type_list)
 {
   using type          = typename c2h::get<0, TestType>;
   const int num_items = 42;
-  thrust::device_vector<type> input(num_items, 1.0f);
-  thrust::device_vector<type> output(1);
+  c2h::device_vector<type> input(num_items, 1.0f);
+  c2h::device_vector<type> output(1);
 
   const type* d_input = thrust::raw_pointer_cast(input.data());
 
@@ -163,5 +138,5 @@ CUB_TEST("Deterministic Device reduce works with float and double and is determi
          float_type_list)
 {
   using type = typename c2h::get<0, TestType>;
-  reduce_1<type>();
+  deterministic_reduce_1<type>();
 }

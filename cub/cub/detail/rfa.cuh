@@ -103,7 +103,7 @@ std::size_t vector_size()
 }
 
 template <class T>
-auto abs_max(const T&);
+inline static auto abs_max(const T&);
 
 template <>
 __host__ __device__ auto abs_max(const float4& x)
