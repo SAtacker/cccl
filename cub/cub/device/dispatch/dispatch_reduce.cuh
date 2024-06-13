@@ -1416,14 +1416,13 @@ struct DispatchSegmentedReduce : SelectedPolicy
 namespace detail
 {
 
+namespace rfa_detail
+{
 template <typename ReductionOpT, typename InitT, typename InputIteratorT>
 using AccumT = detail::accumulator_t<ReductionOpT, InitT, cub::detail::value_t<InputIteratorT>>;
 
 template <typename OutputIteratorT, typename InputIteratorT>
 using InitT = cub::detail::non_void_value_t<OutputIteratorT, cub::detail::value_t<InputIteratorT>>;
-/******************************************************************************
- * Single-problem dispatch
- *****************************************************************************/
 
 template <typename FloatType = float, typename std::enable_if_t<std::is_floating_point_v<FloatType>>* = nullptr>
 struct deterministic_sum_t
@@ -1432,13 +1431,13 @@ struct deterministic_sum_t
 
   __host__ __device__ DeterministicAcc operator()(DeterministicAcc acc, FloatType f)
   {
-    acc.add(f);
+    acc += f;
     return acc;
   }
 
   __host__ __device__ DeterministicAcc operator()(FloatType f, DeterministicAcc acc)
   {
-    acc.add(f);
+    acc += f;
     return acc;
   }
 
@@ -1450,6 +1449,11 @@ struct deterministic_sum_t
   }
 };
 
+} // namespace rfa_detail
+
+/******************************************************************************
+ * Single-problem dispatch
+ *****************************************************************************/
 /**
  * @brief Utility class for dispatching the appropriately-tuned kernels for
  *        device-wide reduction in deterministic fashion
@@ -1466,13 +1470,14 @@ struct deterministic_sum_t
  * @tparam InitT
  *   Initial value type
  */
-template <
-  typename InputIteratorT,
-  typename OutputIteratorT,
-  typename OffsetT,
-  typename SelectedPolicy =
-    DeviceReducePolicy<AccumT<cub::Sum, InitT<OutputIteratorT, InputIteratorT>, InputIteratorT>, OffsetT, cub::Sum>,
-  typename TransformOpT = ::cuda::std::__identity>
+template <typename InputIteratorT,
+          typename OutputIteratorT,
+          typename OffsetT,
+          typename SelectedPolicy = DeviceReducePolicy<
+            rfa_detail::AccumT<cub::Sum, rfa_detail::InitT<OutputIteratorT, InputIteratorT>, InputIteratorT>,
+            OffsetT,
+            cub::Sum>,
+          typename TransformOpT = ::cuda::std::__identity>
 struct DeterministicDispatchReduce : SelectedPolicy
 {
   /**
@@ -1511,13 +1516,13 @@ struct DeterministicDispatchReduce : SelectedPolicy
     InputIteratorT d_in,
     OutputIteratorT d_out,
     OffsetT num_items,
-    InitT<OutputIteratorT, InputIteratorT> init = {},
-    cudaStream_t stream                         = {},
-    TransformOpT transform_op                   = {})
+    rfa_detail::InitT<OutputIteratorT, InputIteratorT> init = {},
+    cudaStream_t stream                                     = {},
+    TransformOpT transform_op                               = {})
   {
-    using init_t                = InitT<OutputIteratorT, InputIteratorT>;
-    using accum_t               = AccumT<cub::Sum, init_t, InputIteratorT>;
-    using deterministic_add_t   = deterministic_sum_t<accum_t>;
+    using init_t                = rfa_detail::InitT<OutputIteratorT, InputIteratorT>;
+    using accum_t               = rfa_detail::AccumT<cub::Sum, init_t, InputIteratorT>;
+    using deterministic_add_t   = rfa_detail::deterministic_sum_t<accum_t>;
     using deterministic_accum_t = typename deterministic_add_t::DeterministicAcc;
 
     using AcumFloatTransformT = detail::rfa_float_transform_t<accum_t>;
