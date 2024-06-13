@@ -25,8 +25,6 @@
  *
  ******************************************************************************/
 
-#include <cub/device/device_adjacent_difference.cuh>
-
 #include "cub/device/device_reduce.cuh"
 #include <nvbench/range.cuh>
 #include <nvbench/types.cuh>
@@ -70,11 +68,11 @@ struct policy_hub_t
 };
 #endif // !TUNE_BASE
 
-template <class T, class OffsetT>
-void deterministic_sum(nvbench::state& state, nvbench::type_list<T, OffsetT>)
+template <class T>
+void deterministic_sum(nvbench::state& state, nvbench::type_list<T>)
 {
-  using input_it_t  = const OffsetT*;
-  using output_it_t = OffsetT*;
+  using input_it_t  = const T*;
+  using output_it_t = T*;
   using offset_t    = int;
 
 #if !TUNE_BASE
@@ -83,24 +81,23 @@ void deterministic_sum(nvbench::state& state, nvbench::type_list<T, OffsetT>)
   using dispatch_t = cub::detail::DeterministicDispatchReduce<input_it_t, output_it_t, offset_t>;
 #endif // TUNE_BASE
 
-  const auto elements       = static_cast<OffsetT>(state.get_int64("Elements{io}"));
+  const auto elements       = static_cast<T>(state.get_int64("Elements{io}"));
   const bit_entropy entropy = str_to_entropy(state.get_string("Entropy"));
 
-  thrust::device_vector<OffsetT> in = generate(elements, entropy);
-  thrust::device_vector<OffsetT> out(elements);
+  thrust::device_vector<T> in = generate(elements, entropy);
+  thrust::device_vector<T> out(1);
 
   input_it_t d_in   = thrust::raw_pointer_cast(in.data());
   output_it_t d_out = thrust::raw_pointer_cast(out.data());
-
   state.add_element_count(elements);
-  state.add_global_memory_reads<OffsetT>(elements, "Size");
-  state.add_global_memory_writes<OffsetT>(elements);
+  state.add_global_memory_reads<T>(elements, "Size");
+  state.add_global_memory_writes<T>(out.size());
 
   std::size_t temp_storage_bytes{};
   dispatch_t::Dispatch(nullptr, temp_storage_bytes, d_in, d_out, static_cast<offset_t>(elements), {}, 0);
 
-  thrust::device_vector<std::uint8_t> temp_storage(temp_storage_bytes);
-  std::uint8_t* d_temp_storage = thrust::raw_pointer_cast(temp_storage.data());
+  thrust::device_vector<nvbench::uint8_t> temp_storage(temp_storage_bytes);
+  auto* d_temp_storage = thrust::raw_pointer_cast(temp_storage.data());
 
   state.exec(nvbench::exec_tag::no_batch | nvbench::exec_tag::sync, [&](nvbench::launch& launch) {
     dispatch_t::Dispatch(
@@ -110,8 +107,8 @@ void deterministic_sum(nvbench::state& state, nvbench::type_list<T, OffsetT>)
 
 using types = nvbench::type_list<float>;
 
-NVBENCH_BENCH_TYPES(deterministic_sum, NVBENCH_TYPE_AXES(types, nvbench::type_list<float>))
+NVBENCH_BENCH_TYPES(deterministic_sum, NVBENCH_TYPE_AXES(types))
   .set_name("base")
-  .set_type_axes_names({"T{ct}", "OffsetT{ct}"})
+  .set_type_axes_names({"T{ct}"})
   .add_int64_power_of_two_axis("Elements{io}", nvbench::range(16, 28, 4))
   .add_string_axis("Entropy", {"1.000", "0.544", "0.201"});
