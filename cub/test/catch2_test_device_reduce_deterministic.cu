@@ -134,7 +134,7 @@ void deterministic_reduce_heterogenous(const int N)
   memcpy(cub::detail::bin_host_buffer, &bins, sizeof(bins));
   cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
 
-  cub::detail::deterministic_sum_t<type> op{};
+  cub::detail::rfa_detail::deterministic_sum_t<type> op{};
   cub::detail::ReproducibleFloatingAccumulator<type> res_host =
     std::accumulate(input_host.begin(), input_host.end(), cub::detail::ReproducibleFloatingAccumulator<type>{}, op);
 
@@ -194,7 +194,7 @@ CUB_TEST("Deterministic Device reduce works with float and double on cpu", "[red
   memcpy(cub::detail::bin_host_buffer, &bins, sizeof(bins));
   cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
 
-  cub::detail::deterministic_sum_t<type> op{};
+  cub::detail::rfa_detail::deterministic_sum_t<type> op{};
   cub::detail::ReproducibleFloatingAccumulator<type> res =
     std::accumulate(input.begin(), input.end(), cub::detail::ReproducibleFloatingAccumulator<type>{}, op);
 
@@ -213,7 +213,7 @@ CUB_TEST("Deterministic Device reduce works with float and double on cpu with kn
   memcpy(cub::detail::bin_host_buffer, &bins, sizeof(bins));
   cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
 
-  cub::detail::deterministic_sum_t<type> op{};
+  cub::detail::rfa_detail::deterministic_sum_t<type> op{};
   cub::detail::ReproducibleFloatingAccumulator<type> res =
     std::accumulate(input.begin(), input.end(), cub::detail::ReproducibleFloatingAccumulator<type>{}, op);
 
