@@ -1,0 +1,29 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "SM89",
+      "inherits": "all-dev",
+      "cacheVariables": {
+        "CMAKE_CUDA_ARCHITECTURES": "89",
+        "CCCL_ENABLE_BENCHMARKS": true,
+        "CUB_SEPARATE_CATCH2": false,
+        "CCCL_ENABLE_LIBCUDACXX": false,
+        "CMAKE_BUILD_TYPE": "Release",
+        "CUB_CUDA_ARCHITECTURES":89
+      }
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "SM89",
+      "configurePreset": "SM89",
+      "inherits": "all-dev"
+    }
+  ]
+}

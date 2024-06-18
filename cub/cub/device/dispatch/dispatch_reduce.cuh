@@ -36,6 +36,8 @@
 
 #include <cub/config.cuh>
 
+// #include <__clang_cuda_runtime_wrapper.h>
+
 #if defined(_CCCL_IMPLICIT_SYSTEM_HEADER_GCC)
 #  pragma GCC system_header
 #elif defined(_CCCL_IMPLICIT_SYSTEM_HEADER_CLANG)
@@ -1424,10 +1426,130 @@ using AccumT = detail::accumulator_t<ReductionOpT, InitT, cub::detail::value_t<I
 template <typename OutputIteratorT, typename InputIteratorT>
 using InitT = cub::detail::non_void_value_t<OutputIteratorT, cub::detail::value_t<InputIteratorT>>;
 
+template <typename FloatVecType>
+struct floatVecTypeWrapper : public FloatVecType
+{
+  __host__ __device__ constexpr auto& operator[](const std::size_t& i)
+  {
+    switch (i % 4)
+    {
+      case 0:
+        return this->x;
+      case 1:
+        return this->y;
+      case 2:
+        return this->z;
+      case 3:
+        return this->w;
+    }
+    return this->x;
+  }
+};
+
+template <typename FloatType = float, typename std::enable_if_t<std::is_floating_point_v<FloatType>>* = nullptr>
+struct rfa_wrapper
+{
+  using vec_t =
+    std::conditional_t<std::is_same_v<FloatType, float>, floatVecTypeWrapper<float4>, floatVecTypeWrapper<double4>>;
+  using DeterministicAcc = detail::ReproducibleFloatingAccumulator<FloatType>;
+  DeterministicAcc acc;
+#ifdef __CUDA_ARCH__
+  vec_t vec;
+#endif
+#ifdef __CUDA_ARCH__
+  int add_count;
+#endif
+  __host__ __device__ rfa_wrapper& operator+=(const FloatType& f)
+  {
+#ifdef __CUDA_ARCH__
+    vec[add_count++] += f;
+    if (add_count >= 3)
+    {
+      acc += vec;
+      vec       = {0, 0, 0, 0};
+      add_count = 0;
+    }
+    printf("+= float type add count %d tid %d float %f x %f y %f z %f w %f acc res %f\n",
+           add_count,
+           threadIdx.x,
+           f,
+           vec.x,
+           vec.y,
+           vec.z,
+           vec.w,
+           acc.conv());
+#else
+    acc += f;
+// add_count = 0;
+#endif
+    return *this;
+  }
+
+  __host__ __device__ rfa_wrapper& operator+=(const rfa_wrapper& acc_)
+  {
+    acc += acc_.acc;
+#ifdef __CUDA_ARCH__
+    if (add_count != 0)
+    {
+      acc += vec;
+      printf("+= rfa wrapper add count %d tid %d float_acc_res %f x %f y %f z %f w %f acc res %f\n",
+             add_count,
+             threadIdx.x,
+             acc_.acc.conv(),
+             vec.x,
+             vec.y,
+             vec.z,
+             vec.w,
+             acc.conv());
+
+      vec       = {0, 0, 0, 0};
+      add_count = 0;
+    }
+    else
+    {
+      printf("+= rfa wrapper add count %d tid %d float_acc_res %f x %f y %f z %f w %f acc res %f\n",
+             add_count,
+             threadIdx.x,
+             acc_.acc.conv(),
+             vec.x,
+             vec.y,
+             vec.z,
+             vec.w,
+             acc.conv());
+    }
+#endif
+    return *this;
+  }
+
+  __host__ __device__ rfa_wrapper& operator=(const FloatType& f)
+  {
+    *this += f;
+    return *this;
+  }
+
+  rfa_wrapper()                              = default;
+  rfa_wrapper(const rfa_wrapper&)            = default;
+  rfa_wrapper& operator=(const rfa_wrapper&) = default;
+};
+
+template <typename FloatType = float, typename std::enable_if_t<std::is_floating_point_v<FloatType>>* = nullptr>
+struct rfa_wrapper_float_transform_t
+{
+  __device__ FloatType operator()(FloatType accum)
+  {
+    return accum;
+  }
+
+  __device__ FloatType operator()(rfa_wrapper<FloatType> accum)
+  {
+    return accum.acc.conv();
+  }
+};
+
 template <typename FloatType = float, typename std::enable_if_t<std::is_floating_point_v<FloatType>>* = nullptr>
 struct deterministic_sum_t
 {
-  using DeterministicAcc = detail::ReproducibleFloatingAccumulator<FloatType>;
+  using DeterministicAcc = rfa_wrapper<FloatType>;
 
   __host__ __device__ DeterministicAcc operator()(DeterministicAcc acc, FloatType f)
   {
@@ -1437,8 +1559,7 @@ struct deterministic_sum_t
 
   __host__ __device__ DeterministicAcc operator()(FloatType f, DeterministicAcc acc)
   {
-    acc += f;
-    return acc;
+    return this->operator()(acc, f);
   }
 
   __host__ __device__ DeterministicAcc operator()(DeterministicAcc lhs, DeterministicAcc rhs)
@@ -1525,7 +1646,7 @@ struct DeterministicDispatchReduce : SelectedPolicy
     using deterministic_add_t   = rfa_detail::deterministic_sum_t<accum_t>;
     using deterministic_accum_t = typename deterministic_add_t::DeterministicAcc;
 
-    using AcumFloatTransformT = detail::rfa_float_transform_t<accum_t>;
+    using AcumFloatTransformT = detail::rfa_detail::rfa_wrapper_float_transform_t<accum_t>;
 
     using OutputIteratorTransformT = thrust::transform_output_iterator<AcumFloatTransformT, OutputIteratorT>;
 
