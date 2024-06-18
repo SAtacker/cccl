@@ -65,6 +65,20 @@
       }
     },
     {
+        "name": "shreyas86",
+        "description": "",
+        "displayName": "",
+        "inherits": [
+            "all-dev"
+        ],
+        "cacheVariables": {
+            "CMAKE_CUDA_ARCHITECTURES": "86",
+            "CUB_ENABLE_TESTING": true,
+            "CCCL_ENABLE_BENCHMARKS": true,
+            "CMAKE_CXX_STANDARD":"17"
+        }
+    },
+    {
       "name": "all-dev-debug",
       "displayName": "all-dev debug",
       "inherits": "all-dev",
