@@ -86,10 +86,10 @@ struct BlockScanWarpScans
   };
 
   ///  WarpScan utility type
-  typedef WarpScan<T, WARP_THREADS> WarpScanT;
+  using WarpScanT = WarpScan<T, WARP_THREADS>;
 
   ///  WarpScan utility type
-  typedef WarpScan<T, WARPS> WarpAggregateScan;
+  using WarpAggregateScan = WarpScan<T, WARPS>;
 
   /// Shared memory storage layout type
 
@@ -204,6 +204,7 @@ struct BlockScanWarpScans
     block_aggregate = temp_storage.warp_aggregates[0];
 
     // Use template unrolling (since the PTX backend can't handle unrolling it for SM1x)
+    // TODO(bgruber): does that still hold today? This is creating a lot of template instantiations
     ApplyWarpAggregates(warp_prefix, scan_op, block_aggregate, Int2Type<1>());
     /*
             #pragma unroll

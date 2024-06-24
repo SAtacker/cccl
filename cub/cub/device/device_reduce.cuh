@@ -1196,7 +1196,7 @@ struct DeviceReduce
     // Selection op (not used)
 
     // Default == operator
-    typedef Equality EqualityOp;
+    using EqualityOp = Equality;
 
     return DispatchReduceByKey<
       KeysInputIteratorT,
