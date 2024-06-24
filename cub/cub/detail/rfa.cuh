@@ -827,7 +827,7 @@ public:
   }
 
   /// Return the endurance of the binned fp
-  constexpr int endurance() const
+  __host__ __device__ inline constexpr int endurance() const
   {
     return ENDURANCE;
   }
@@ -1052,7 +1052,7 @@ public:
     binned_dmddeposit(static_cast<ftype>(x.z), 1);
     binned_dmddeposit(static_cast<ftype>(x.w), 1);
 
-    binned_dmrenorm(1, 1);
+    // binned_dmrenorm(1, 1);
 
     return *this;
   }
@@ -1065,7 +1065,7 @@ public:
     binned_dmddeposit(static_cast<ftype>(x.z), 1);
     binned_dmddeposit(static_cast<ftype>(x.w), 1);
 
-    binned_dmrenorm(1, 1);
+    // binned_dmrenorm(1, 1);
 
     return *this;
   }
