@@ -1429,7 +1429,7 @@ using InitT = cub::detail::non_void_value_t<OutputIteratorT, cub::detail::value_
 template <typename FloatVecType>
 struct floatVecTypeWrapper : public FloatVecType
 {
-  __host__ __device__ constexpr auto& operator[](const std::size_t& i)
+  __host__ __device__ inline constexpr auto& operator[](const std::size_t& i)
   {
     switch (i % 4)
     {
@@ -1452,76 +1452,44 @@ struct rfa_wrapper
   using vec_t =
     std::conditional_t<std::is_same_v<FloatType, float>, floatVecTypeWrapper<float4>, floatVecTypeWrapper<double4>>;
   using DeterministicAcc = detail::ReproducibleFloatingAccumulator<FloatType>;
+
+  int add_count = 0;
+  vec_t vec     = {0, 0, 0, 0};
   DeterministicAcc acc;
-#ifdef __CUDA_ARCH__
-  vec_t vec;
-#endif
-#ifdef __CUDA_ARCH__
-  int add_count;
-#endif
-  __host__ __device__ rfa_wrapper& operator+=(const FloatType& f)
+
+  __host__ __device__ inline rfa_wrapper& operator+=(const FloatType& f)
   {
-#ifdef __CUDA_ARCH__
-    vec[add_count++] += f;
-    if (add_count >= 3)
+    vec[add_count++] = f;
+    if (add_count == 4)
     {
       acc += vec;
       vec       = {0, 0, 0, 0};
       add_count = 0;
     }
-    printf("+= float type add count %d tid %d float %f x %f y %f z %f w %f acc res %f\n",
-           add_count,
-           threadIdx.x,
-           f,
-           vec.x,
-           vec.y,
-           vec.z,
-           vec.w,
-           acc.conv());
-#else
-    acc += f;
-// add_count = 0;
-#endif
     return *this;
   }
 
-  __host__ __device__ rfa_wrapper& operator+=(const rfa_wrapper& acc_)
+  __host__ __device__ inline rfa_wrapper& operator+=(const rfa_wrapper& acc_other)
   {
-    acc += acc_.acc;
-#ifdef __CUDA_ARCH__
     if (add_count != 0)
     {
       acc += vec;
-      printf("+= rfa wrapper add count %d tid %d float_acc_res %f x %f y %f z %f w %f acc res %f\n",
-             add_count,
-             threadIdx.x,
-             acc_.acc.conv(),
-             vec.x,
-             vec.y,
-             vec.z,
-             vec.w,
-             acc.conv());
 
       vec       = {0, 0, 0, 0};
       add_count = 0;
     }
-    else
+
+    if (acc_other.add_count != 0)
     {
-      printf("+= rfa wrapper add count %d tid %d float_acc_res %f x %f y %f z %f w %f acc res %f\n",
-             add_count,
-             threadIdx.x,
-             acc_.acc.conv(),
-             vec.x,
-             vec.y,
-             vec.z,
-             vec.w,
-             acc.conv());
+      acc += acc_other.vec;
     }
-#endif
+
+    acc += acc_other.acc;
+
     return *this;
   }
 
-  __host__ __device__ rfa_wrapper& operator=(const FloatType& f)
+  __host__ __device__ inline rfa_wrapper& operator=(const FloatType& f)
   {
     *this += f;
     return *this;
