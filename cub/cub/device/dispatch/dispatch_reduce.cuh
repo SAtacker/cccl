@@ -1517,7 +1517,9 @@ struct rfa_wrapper_float_transform_t
 template <typename FloatType = float, typename std::enable_if_t<std::is_floating_point_v<FloatType>>* = nullptr>
 struct deterministic_sum_t
 {
-  using DeterministicAcc = rfa_wrapper<FloatType>;
+  // using DeterministicAcc = rfa_wrapper<FloatType>;
+  using vec_t            = std::conditional_t<std::is_same_v<FloatType, float>, float4, double4>;
+  using DeterministicAcc = detail::ReproducibleFloatingAccumulator<FloatType>;
 
   __host__ __device__ DeterministicAcc operator()(DeterministicAcc acc, FloatType f)
   {
@@ -1525,7 +1527,18 @@ struct deterministic_sum_t
     return acc;
   }
 
+  __host__ __device__ DeterministicAcc operator()(DeterministicAcc acc, vec_t f)
+  {
+    acc += f;
+    return acc;
+  }
+
   __host__ __device__ DeterministicAcc operator()(FloatType f, DeterministicAcc acc)
+  {
+    return this->operator()(acc, f);
+  }
+
+  __host__ __device__ DeterministicAcc operator()(vec_t f, DeterministicAcc acc)
   {
     return this->operator()(acc, f);
   }
@@ -1614,7 +1627,8 @@ struct DeterministicDispatchReduce : SelectedPolicy
     using deterministic_add_t   = rfa_detail::deterministic_sum_t<accum_t>;
     using deterministic_accum_t = typename deterministic_add_t::DeterministicAcc;
 
-    using AcumFloatTransformT = detail::rfa_detail::rfa_wrapper_float_transform_t<accum_t>;
+    // using AcumFloatTransformT = detail::rfa_detail::rfa_wrapper_float_transform_t<accum_t>;
+    using AcumFloatTransformT = detail::rfa_float_transform_t<accum_t>;
 
     using OutputIteratorTransformT = thrust::transform_output_iterator<AcumFloatTransformT, OutputIteratorT>;
 
