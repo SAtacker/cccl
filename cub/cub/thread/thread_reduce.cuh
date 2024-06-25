@@ -35,6 +35,8 @@
 
 #include <cub/config.cuh>
 
+#include <type_traits>
+
 #if defined(_CCCL_IMPLICIT_SYSTEM_HEADER_GCC)
 #  pragma GCC system_header
 #elif defined(_CCCL_IMPLICIT_SYSTEM_HEADER_CLANG)
@@ -43,6 +45,7 @@
 #  pragma system_header
 #endif // no system header
 
+#include <cub/detail/rfa.cuh>
 #include <cub/detail/type_traits.cuh>
 #include <cub/thread/thread_operators.cuh>
 
@@ -73,14 +76,68 @@ _CCCL_DEVICE _CCCL_FORCEINLINE AccumT
 ThreadReduce(T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH> /*length*/)
 {
   AccumT retval = prefix;
-
-#pragma unroll
-  for (int i = 0; i < LENGTH; ++i)
+  if constexpr ((std::is_invocable_v<ReductionOp, detail::ReproducibleFloatingAccumulator<float>, float4>
+                 || std::is_invocable_v<ReductionOp, detail::ReproducibleFloatingAccumulator<double>, double4>)
+                && (std::is_same_v<T, float> || std::is_same_v<T, double>) )
   {
-    retval = reduction_op(retval, input[i]);
-  }
+    constexpr int float4_inp_len = LENGTH / 4 + (LENGTH - LENGTH / 4) > 0;
+    auto* float4_input = reinterpret_cast<std::conditional_t<std::is_same_v<T, float>, float4, double4>*>(input);
+    //     cuda::std::array<float4, float4_inp_len> float4_input;
+//     std::conditional_t<std::is_same_v<T, float>, float4, double4> float4_input[float4_inp_len];
+// #pragma unroll
+//     for (int i = 0; i < float4_inp_len && i < LENGTH; ++i)
+//     {
+//       if (i * 4 < LENGTH)
+//       {
+//         float4_input[i].x = input[i * 4];
+//       }
+//       else
+//       {
+//         float4_input[i].x = 0.0f;
+//       }
+//       if (i * 4 + 1 < LENGTH)
+//       {
+//         float4_input[i].y = input[i * 4 + 1];
+//       }
+//       else
+//       {
+//         float4_input[i].y = 0.0f;
+//       }
+//       if (i * 4 + 2 < LENGTH)
+//       {
+//         float4_input[i].z = input[i * 4 + 2];
+//       }
+//       else
+//       {
+//         float4_input[i].z = 0.0f;
+//       }
+//       if (i * 4 + 3 < LENGTH)
+//       {
+//         float4_input[i].w = input[i * 4 + 3];
+//       }
+//       else
+//       {
+//         float4_input[i].w = 0.0f;
+//       }
+//     }
+#pragma unroll
+    for (int i = 0; i < float4_inp_len; ++i)
+    {
+      retval = reduction_op(retval, float4_input[i]);
+    }
 
-  return retval;
+    return retval;
+  }
+  else
+  {
+#pragma unroll
+    for (int i = 0; i < LENGTH; ++i)
+    {
+      retval = reduction_op(retval, input[i]);
+    }
+
+    return retval;
+  }
 }
 
 /**

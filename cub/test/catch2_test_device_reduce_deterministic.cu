@@ -130,7 +130,7 @@ void deterministic_reduce_heterogenous(const int N)
   const int num_items = N;
   c2h::device_vector<type> input_device(num_items, 1.0f);
   const type min_val = static_cast<type>(0.0f);
-  const type max_val = static_cast<type>(100.0f);
+  const type max_val = static_cast<type>(1000.0f);
   c2h::gen(CUB_SEED(2), input_device, min_val, max_val);
   c2h::host_vector<type> input_host = input_device;
 
@@ -140,8 +140,8 @@ void deterministic_reduce_heterogenous(const int N)
   cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
 
   cub::detail::rfa_detail::deterministic_sum_t<type> op{};
-  cub::detail::rfa_detail::rfa_wrapper<type> res =
-    std::accumulate(input_host.begin(), input_host.end(), cub::detail::rfa_detail::rfa_wrapper<type>{}, op);
+  cub::detail::ReproducibleFloatingAccumulator<type> res =
+    std::accumulate(input_host.begin(), input_host.end(), cub::detail::ReproducibleFloatingAccumulator<type>{}, op);
 
   c2h::device_vector<type> output_device(1);
 
@@ -151,13 +151,13 @@ void deterministic_reduce_heterogenous(const int N)
 
   type const res_device = output_device[0];
 
-  REQUIRE(res.acc.conv() == res_device);
+  REQUIRE(res.conv() == res_device);
 }
 
 CUB_TEST("Deterministic Device reduce works with float and double on gpu", "[reduce][deterministic]", float_type_list)
 {
   using type          = typename c2h::get<0, TestType>;
-  const int num_items = 40;
+  const int num_items = 1 << 10;
   c2h::device_vector<type> input(num_items, 1.0f);
   c2h::device_vector<type> output(1);
 
@@ -191,7 +191,7 @@ CUB_TEST("Deterministic Device reduce works with float and double on gpu with kn
 CUB_TEST("Deterministic Device reduce works with float and double on cpu", "[reduce][deterministic]", float_type_list)
 {
   using type          = typename c2h::get<0, TestType>;
-  const int num_items = 44;
+  const int num_items = 42;
   c2h::host_vector<type> input(num_items, 1.0f);
 
   cub::detail::RFA_bins<type> bins;
@@ -200,10 +200,10 @@ CUB_TEST("Deterministic Device reduce works with float and double on cpu", "[red
   cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
 
   cub::detail::rfa_detail::deterministic_sum_t<type> op{};
-  cub::detail::rfa_detail::rfa_wrapper<type> res =
-    std::accumulate(input.begin(), input.end(), cub::detail::rfa_detail::rfa_wrapper<type>{}, op);
+  cub::detail::ReproducibleFloatingAccumulator<type> res =
+    std::accumulate(input.begin(), input.end(), cub::detail::ReproducibleFloatingAccumulator<type>{}, op);
 
-  REQUIRE(res.acc.conv() == num_items);
+  REQUIRE(res.conv() == num_items);
 }
 
 CUB_TEST("Deterministic Device reduce works with float and double on cpu with known result",
@@ -211,7 +211,7 @@ CUB_TEST("Deterministic Device reduce works with float and double on cpu with kn
          float_type_list)
 {
   using type                   = typename c2h::get<0, TestType>;
-  c2h::host_vector<type> input = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 0.0f, 0.0f, 0.0f};
+  c2h::host_vector<type> input = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f};
 
   cub::detail::RFA_bins<type> bins;
   bins.initialize_bins();
@@ -219,27 +219,26 @@ CUB_TEST("Deterministic Device reduce works with float and double on cpu with kn
   cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
 
   cub::detail::rfa_detail::deterministic_sum_t<type> op{};
-  cub::detail::rfa_detail::rfa_wrapper<type> res =
-    std::accumulate(input.begin(), input.end(), cub::detail::rfa_detail::rfa_wrapper<type>{}, op);
+  cub::detail::ReproducibleFloatingAccumulator<type> res =
+    std::accumulate(input.begin(), input.end(), cub::detail::ReproducibleFloatingAccumulator<type>{}, op);
 
-  REQUIRE(res.acc.conv() == 15.0f);
+  REQUIRE(res.conv() == 15.0f);
 }
 
 CUB_TEST("Deterministic Device reduce works with float and double and is deterministic on gpu with different policies ",
          "[reduce][deterministic]",
          float_type_list)
 {
-  using type = typename c2h::get<0, TestType>;
-  // constexpr int max_items = 50000;
-  // constexpr int min_items = 1;
+  using type              = typename c2h::get<0, TestType>;
+  constexpr int max_items = 50000;
+  constexpr int min_items = 1;
 
-  // const int num_items = GENERATE_COPY(
-  //   take(3, random(min_items, max_items)),
-  //   values({
-  //     min_items,
-  //     max_items,
-  //   }));
-  const int num_items = 50000 / 4;
+  const int num_items = GENERATE_COPY(
+    take(3, random(min_items, max_items)),
+    values({
+      min_items,
+      max_items,
+    }));
   CAPTURE(num_items);
   deterministic_reduce_gpu<type>(num_items);
 }
@@ -248,18 +247,17 @@ CUB_TEST("Deterministic Device reduce works with float and double on cpu and gpu
          "[reduce][deterministic]",
          float_type_list)
 {
-  using type = typename c2h::get<0, TestType>;
-  // constexpr int max_items = 50000;
-  // constexpr int min_items = 1;
+  using type              = typename c2h::get<0, TestType>;
+  constexpr int max_items = 50000;
+  constexpr int min_items = 1;
 
-  // const int num_items = GENERATE_COPY(
-  //   take(3, random(min_items, max_items)),
-  //   values({
-  //     min_items,
-  //     max_items,
-  //   }));
+  const int num_items = GENERATE_COPY(
+    take(3, random(min_items, max_items)),
+    values({
+      min_items,
+      max_items,
+    }));
 
-  const int num_items = 50000 / 4;
   CAPTURE(num_items);
   deterministic_reduce_heterogenous<type>(num_items);
 }
