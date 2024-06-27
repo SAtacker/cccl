@@ -248,26 +248,32 @@ struct AgentReduce
     Int2Type<true> /*is_full_tile*/,
     Int2Type<false> /*can_vectorize*/)
   {
-    // if constexpr ((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
-    //                && std::is_same_v<InputIteratorT, const float*>)
-    //               || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
-    //                   && std::is_same_v<InputIteratorT, const double*>) )
-    // {
-    //   // Reduce items within each thread stripe
-    //   thread_aggregate = internal::ThreadReduce(d_in, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{});
-    // }
-    // else
-    // {
-    AccumT items[ITEMS_PER_THREAD];
+    if constexpr ((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
+                   && std::is_same_v<InputIteratorT, const float*>)
+                  || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
+                      && std::is_same_v<InputIteratorT, const double*>) )
+    {
+      std::remove_reference_t<decltype(transform_op(d_wrapped_in[0]))> items[ITEMS_PER_THREAD];
 
-    // Load items in striped fashion
-    cub::detail::load_transform_direct_striped<BLOCK_THREADS>(
-      threadIdx.x, d_wrapped_in + block_offset, items, transform_op);
+      // Load items in striped fashion
+      cub::detail::load_transform_direct_striped<BLOCK_THREADS>(
+        threadIdx.x, d_wrapped_in + block_offset, items, transform_op);
 
-    // Reduce items within each thread stripe
-    thread_aggregate = (IS_FIRST_TILE) ? internal::ThreadReduce(items, reduction_op)
-                                       : internal::ThreadReduce(items, reduction_op, thread_aggregate);
-    // }
+      // Reduce items within each thread stripe
+      thread_aggregate = internal::ThreadReduce(items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{});
+    }
+    else
+    {
+      AccumT items[ITEMS_PER_THREAD];
+
+      // Load items in striped fashion
+      cub::detail::load_transform_direct_striped<BLOCK_THREADS>(
+        threadIdx.x, d_wrapped_in + block_offset, items, transform_op);
+
+      // Reduce items within each thread stripe
+      thread_aggregate = (IS_FIRST_TILE) ? internal::ThreadReduce(items, reduction_op)
+                                         : internal::ThreadReduce(items, reduction_op, thread_aggregate);
+    }
   }
 
   /**
