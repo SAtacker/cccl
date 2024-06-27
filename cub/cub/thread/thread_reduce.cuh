@@ -78,48 +78,49 @@ ThreadReduce(T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH
   AccumT retval = prefix;
   if constexpr ((std::is_invocable_v<ReductionOp, detail::ReproducibleFloatingAccumulator<float>, float4>
                  || std::is_invocable_v<ReductionOp, detail::ReproducibleFloatingAccumulator<double>, double4>)
-                && (std::is_same_v<T, float> || std::is_same_v<T, double>) )
+                && (std::is_convertible_v<T, float> || std::is_convertible_v<T, double>) )
   {
+    // printf("jere\n");
     constexpr int float4_inp_len = LENGTH / 4 + (LENGTH - LENGTH / 4) > 0;
-    auto* float4_input = reinterpret_cast<std::conditional_t<std::is_same_v<T, float>, float4, double4>*>(input);
-    //     cuda::std::array<float4, float4_inp_len> float4_input;
-//     std::conditional_t<std::is_same_v<T, float>, float4, double4> float4_input[float4_inp_len];
-// #pragma unroll
-//     for (int i = 0; i < float4_inp_len && i < LENGTH; ++i)
-//     {
-//       if (i * 4 < LENGTH)
-//       {
-//         float4_input[i].x = input[i * 4];
-//       }
-//       else
-//       {
-//         float4_input[i].x = 0.0f;
-//       }
-//       if (i * 4 + 1 < LENGTH)
-//       {
-//         float4_input[i].y = input[i * 4 + 1];
-//       }
-//       else
-//       {
-//         float4_input[i].y = 0.0f;
-//       }
-//       if (i * 4 + 2 < LENGTH)
-//       {
-//         float4_input[i].z = input[i * 4 + 2];
-//       }
-//       else
-//       {
-//         float4_input[i].z = 0.0f;
-//       }
-//       if (i * 4 + 3 < LENGTH)
-//       {
-//         float4_input[i].w = input[i * 4 + 3];
-//       }
-//       else
-//       {
-//         float4_input[i].w = 0.0f;
-//       }
-//     }
+    // auto* float4_input = reinterpret_cast<std::conditional_t<std::is_same_v<T, float>, float4, double4>*>(input);
+    // cuda::std::array<float4, float4_inp_len> float4_input;
+    std::conditional_t<std::is_same_v<T, float>, float4, double4> float4_input[float4_inp_len];
+#pragma unroll
+    for (int i = 0; i < float4_inp_len && i < LENGTH; ++i)
+    {
+      if (i * 4 < LENGTH)
+      {
+        float4_input[i].x = input[i * 4];
+      }
+      else
+      {
+        float4_input[i].x = 0.0f;
+      }
+      if (i * 4 + 1 < LENGTH)
+      {
+        float4_input[i].y = input[i * 4 + 1];
+      }
+      else
+      {
+        float4_input[i].y = 0.0f;
+      }
+      if (i * 4 + 2 < LENGTH)
+      {
+        float4_input[i].z = input[i * 4 + 2];
+      }
+      else
+      {
+        float4_input[i].z = 0.0f;
+      }
+      if (i * 4 + 3 < LENGTH)
+      {
+        float4_input[i].w = input[i * 4 + 3];
+      }
+      else
+      {
+        float4_input[i].w = 0.0f;
+      }
+    }
 #pragma unroll
     for (int i = 0; i < float4_inp_len; ++i)
     {
@@ -130,6 +131,7 @@ ThreadReduce(T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH
   }
   else
   {
+    // printf("here\n");
 #pragma unroll
     for (int i = 0; i < LENGTH; ++i)
     {

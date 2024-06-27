@@ -248,6 +248,16 @@ struct AgentReduce
     Int2Type<true> /*is_full_tile*/,
     Int2Type<false> /*can_vectorize*/)
   {
+    // if constexpr ((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
+    //                && std::is_same_v<InputIteratorT, const float*>)
+    //               || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
+    //                   && std::is_same_v<InputIteratorT, const double*>) )
+    // {
+    //   // Reduce items within each thread stripe
+    //   thread_aggregate = internal::ThreadReduce(d_in, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{});
+    // }
+    // else
+    // {
     AccumT items[ITEMS_PER_THREAD];
 
     // Load items in striped fashion
@@ -257,6 +267,7 @@ struct AgentReduce
     // Reduce items within each thread stripe
     thread_aggregate = (IS_FIRST_TILE) ? internal::ThreadReduce(items, reduction_op)
                                        : internal::ThreadReduce(items, reduction_op, thread_aggregate);
+    // }
   }
 
   /**
@@ -294,17 +305,29 @@ struct AgentReduce
       vec_items[i] = d_vec_in[BLOCK_THREADS * i];
     }
 
-    // Convert from input type to output type
-    AccumT items[ITEMS_PER_THREAD];
-#pragma unroll
-    for (int i = 0; i < ITEMS_PER_THREAD; ++i)
+    if constexpr ((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
+                   && std::is_same_v<InputIteratorT, const float*>)
+                  || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
+                      && std::is_same_v<InputIteratorT, const double*>) )
     {
-      items[i] = transform_op(input_items[i]);
+      // Reduce items within each thread stripe
+      thread_aggregate =
+        internal::ThreadReduce(input_items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{});
     }
+    else
+    {
+      // Convert from input type to output type
+      AccumT items[ITEMS_PER_THREAD];
+#pragma unroll
+      for (int i = 0; i < ITEMS_PER_THREAD; ++i)
+      {
+        items[i] = transform_op(input_items[i]);
+      }
 
-    // Reduce items within each thread stripe
-    thread_aggregate = (IS_FIRST_TILE) ? internal::ThreadReduce(items, reduction_op)
-                                       : internal::ThreadReduce(items, reduction_op, thread_aggregate);
+      // Reduce items within each thread stripe
+      thread_aggregate = (IS_FIRST_TILE) ? internal::ThreadReduce(items, reduction_op)
+                                         : internal::ThreadReduce(items, reduction_op, thread_aggregate);
+    }
   }
 
   /**

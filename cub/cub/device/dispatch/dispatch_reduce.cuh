@@ -1518,7 +1518,6 @@ template <typename FloatType = float, typename std::enable_if_t<std::is_floating
 struct deterministic_sum_t
 {
   // using DeterministicAcc = rfa_wrapper<FloatType>;
-  using vec_t            = std::conditional_t<std::is_same_v<FloatType, float>, float4, double4>;
   using DeterministicAcc = detail::ReproducibleFloatingAccumulator<FloatType>;
 
   __host__ __device__ DeterministicAcc operator()(DeterministicAcc acc, FloatType f)
@@ -1527,7 +1526,13 @@ struct deterministic_sum_t
     return acc;
   }
 
-  __host__ __device__ DeterministicAcc operator()(DeterministicAcc acc, vec_t f)
+  __host__ __device__ DeterministicAcc operator()(DeterministicAcc acc, float4 f)
+  {
+    acc += f;
+    return acc;
+  }
+
+  __host__ __device__ DeterministicAcc operator()(DeterministicAcc acc, double4 f)
   {
     acc += f;
     return acc;
@@ -1538,7 +1543,12 @@ struct deterministic_sum_t
     return this->operator()(acc, f);
   }
 
-  __host__ __device__ DeterministicAcc operator()(vec_t f, DeterministicAcc acc)
+  __host__ __device__ DeterministicAcc operator()(float4 f, DeterministicAcc acc)
+  {
+    return this->operator()(acc, f);
+  }
+
+  __host__ __device__ DeterministicAcc operator()(double4 f, DeterministicAcc acc)
   {
     return this->operator()(acc, f);
   }
