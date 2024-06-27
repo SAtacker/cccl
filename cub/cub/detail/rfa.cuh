@@ -79,14 +79,21 @@ CUB_NAMESPACE_BEGIN
 namespace detail
 {
 
-constexpr auto custom_pow2(int n)
+// Impl taken from https://www.boost.org/doc/libs/1_85_0/boost/math/ccmath/ldexp.hpp
+__device__ __host__ __forceinline__ constexpr auto custom_ldexp(float arg, int exp)
 {
-  return 1 << n;
-}
+  while (exp > 0)
+  {
+    arg *= 2;
+    --exp;
+  }
+  while (exp < 0)
+  {
+    arg /= 2;
+    ++exp;
+  }
 
-constexpr auto custom_ldexp(float f, int n)
-{
-  return f * custom_pow2(n);
+  return arg;
 }
 
 template <class T>
@@ -760,7 +767,7 @@ private:
     if (shift > 0)
     {
       const auto* const bins = binned_bins(Y_index);
-      // shift Y upwards and add X to Y
+// shift Y upwards and add X to Y
 #pragma unroll
       for (int i = FOLD - 1; i >= 1; i--)
       {
@@ -785,7 +792,7 @@ private:
     else if (shift < 0)
     {
       const auto* const bins = binned_bins(X_index);
-      // shift X upwards and add X to Y
+// shift X upwards and add X to Y
 #pragma unroll
       for (int i = 0; i < FOLD; i++)
       {
@@ -800,7 +807,7 @@ private:
     else if (shift == 0)
     {
       const auto* const bins = binned_bins(X_index);
-      // add X to Y
+// add X to Y
 #pragma unroll
       for (int i = 0; i < FOLD; i++)
       {
