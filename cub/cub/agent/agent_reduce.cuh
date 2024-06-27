@@ -310,9 +310,14 @@ struct AgentReduce
                   || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
                       && std::is_same_v<InputIteratorT, const double*>) )
     {
+      std::remove_reference_t<decltype(transform_op(input_items[0]))> items[ITEMS_PER_THREAD];
+#pragma unroll
+      for (int i = 0; i < ITEMS_PER_THREAD; ++i)
+      {
+        items[i] = transform_op(input_items[i]);
+      }
       // Reduce items within each thread stripe
-      thread_aggregate =
-        internal::ThreadReduce(input_items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{});
+      thread_aggregate = internal::ThreadReduce(items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{});
     }
     else
     {
