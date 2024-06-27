@@ -157,7 +157,7 @@ void deterministic_reduce_heterogenous(const int N)
 CUB_TEST("Deterministic Device reduce works with float and double on gpu", "[reduce][deterministic]", float_type_list)
 {
   using type          = typename c2h::get<0, TestType>;
-  const int num_items = 1 << 10;
+  const int num_items = 1 << 28;
   c2h::device_vector<type> input(num_items, 1.0f);
   c2h::device_vector<type> output(1);
 

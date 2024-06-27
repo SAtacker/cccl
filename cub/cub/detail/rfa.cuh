@@ -1046,6 +1046,7 @@ public:
   /// NOTE: Casts @p x to the type of the binned fp
   __host__ __device__ ReproducibleFloatingAccumulator& operator+=(const float4& x)
   {
+    // printf("float4\n");
     binned_dmdupdate(abs_max(x), 1, 1);
     binned_dmddeposit(static_cast<ftype>(x.x), 1);
     binned_dmddeposit(static_cast<ftype>(x.y), 1);
@@ -1059,6 +1060,7 @@ public:
 
   __host__ __device__ ReproducibleFloatingAccumulator& operator+=(const double4& x)
   {
+    // printf("double4\n");
     binned_dmdupdate(abs_max(x), 1, 1);
     binned_dmddeposit(static_cast<ftype>(x.x), 1);
     binned_dmddeposit(static_cast<ftype>(x.y), 1);
