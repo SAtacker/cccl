@@ -79,6 +79,16 @@ CUB_NAMESPACE_BEGIN
 namespace detail
 {
 
+constexpr auto custom_pow2(int n)
+{
+  return 1 << n;
+}
+
+constexpr auto custom_ldexp(float f, int n)
+{
+  return f * custom_pow2(n);
+}
+
 template <class T>
 struct get_vector_type
 {};
@@ -149,21 +159,24 @@ struct RFA_bins
     return bins[d];
   }
 
-  void initialize_bins()
+  constexpr void initialize_bins()
   {
     if constexpr (std::is_same_v<ftype, float>)
     {
-      bins[0] = std::ldexp(0.75, MAX_EXP);
+      bins[0] = custom_ldexp(0.75, MAX_EXP);
     }
     else
     {
-      bins[0] = 2.0 * ldexp(0.75, MAX_EXP - 1);
+      bins[0] = 2.0 * custom_ldexp(0.75, MAX_EXP - 1);
     }
 
+#pragma unroll
     for (int index = 1; index <= MAXINDEX; index++)
     {
-      bins[index] = ldexp(0.75, MAX_EXP + MANT_DIG - BIN_WIDTH + 1 - index * BIN_WIDTH);
+      bins[index] = custom_ldexp(0.75, MAX_EXP + MANT_DIG - BIN_WIDTH + 1 - index * BIN_WIDTH);
     }
+
+#pragma unroll
     for (int index = MAXINDEX + 1; index < MAXINDEX + MAXFOLD; index++)
     {
       bins[index] = bins[index - 1];
@@ -614,8 +627,8 @@ private:
     const auto* const bins = binned_bins(X_index);
     if (X_index <= (3 * MANT_DIG) / BIN_WIDTH)
     {
-      scale_down = ldexp(0.5, 1 - (2 * MANT_DIG - BIN_WIDTH));
-      scale_up   = ldexp(0.5, 1 + (2 * MANT_DIG - BIN_WIDTH));
+      scale_down = custom_ldexp(0.5, 1 - (2 * MANT_DIG - BIN_WIDTH));
+      scale_up   = custom_ldexp(0.5, 1 + (2 * MANT_DIG - BIN_WIDTH));
       scaled     = max(min(FOLD, (3 * MANT_DIG) / BIN_WIDTH - X_index), 0);
       if (X_index == 0)
       {
@@ -952,7 +965,7 @@ public:
     const double X = std::abs(max_abs_val);
     const double S = std::abs(binned_sum);
     return static_cast<ftype>(
-      max(X, ldexp(0.5, MIN_EXP - 1)) * ldexp(0.5, (1 - FOLD) * BIN_WIDTH + 1) * N
+      max(X, custom_ldexp(0.5, MIN_EXP - 1)) * custom_ldexp(0.5, (1 - FOLD) * BIN_WIDTH + 1) * N
       + ((7.0 * EPSILON) / (1.0 - 6.0 * std::sqrt(static_cast<double>(EPSILON)) - 7.0 * EPSILON)) * S);
   }
 
