@@ -114,9 +114,7 @@ __host__ __device__ auto abs_max(const float4& x)
 template <>
 __host__ __device__ auto abs_max(const double4& x)
 {
-  float4 xx = static_cast<float4>(
-    float4{static_cast<float>(x.x), static_cast<float>(x.y), static_cast<float>(x.z), static_cast<float>(x.w)});
-  return abs_max(xx);
+  return fmax(fmax(fabs(x.x), fabs(x.y)), fmax(fabs(x.z), fabs(x.w)));
 }
 
 template <>
@@ -749,7 +747,7 @@ private:
     if (shift > 0)
     {
       const auto* const bins = binned_bins(Y_index);
-// shift Y upwards and add X to Y
+      // shift Y upwards and add X to Y
 #pragma unroll
       for (int i = FOLD - 1; i >= 1; i--)
       {
@@ -774,7 +772,7 @@ private:
     else if (shift < 0)
     {
       const auto* const bins = binned_bins(X_index);
-// shift X upwards and add X to Y
+      // shift X upwards and add X to Y
 #pragma unroll
       for (int i = 0; i < FOLD; i++)
       {
@@ -789,7 +787,7 @@ private:
     else if (shift == 0)
     {
       const auto* const bins = binned_bins(X_index);
-// add X to Y
+      // add X to Y
 #pragma unroll
       for (int i = 0; i < FOLD; i++)
       {
@@ -1051,23 +1049,16 @@ public:
     binned_dmddeposit(static_cast<ftype>(x.y), 1);
     binned_dmddeposit(static_cast<ftype>(x.z), 1);
     binned_dmddeposit(static_cast<ftype>(x.w), 1);
-
-    // binned_dmrenorm(1, 1);
-
     return *this;
   }
 
   __host__ __device__ ReproducibleFloatingAccumulator& operator+=(const double4& x)
   {
-    // printf("double4\n");
     binned_dmdupdate(abs_max(x), 1, 1);
     binned_dmddeposit(static_cast<ftype>(x.x), 1);
     binned_dmddeposit(static_cast<ftype>(x.y), 1);
     binned_dmddeposit(static_cast<ftype>(x.z), 1);
     binned_dmddeposit(static_cast<ftype>(x.w), 1);
-
-    // binned_dmrenorm(1, 1);
-
     return *this;
   }
 

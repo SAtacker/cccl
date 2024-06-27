@@ -83,43 +83,7 @@ ThreadReduce(T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH
                     || std::is_same_v<AccumT, detail::ReproducibleFloatingAccumulator<double>>) )
   {
     constexpr int float4_inp_len = LENGTH / 4;
-
-    // printf("jere float4_inp_len %d LENGTH %d\n", float4_inp_len, LENGTH);
     auto* float4_input = reinterpret_cast<std::conditional_t<std::is_same_v<T, float>, float4, double4>*>(input);
-    // cuda::std::array<float4, float4_inp_len> float4_input;
-//     std::conditional_t<std::is_same_v<T, float>, float4, double4> float4_input[float4_inp_len] = {0};
-// #pragma unroll
-//     for (int i = 0; i < LENGTH; ++i)
-//     {
-//       auto j = i / 4;
-
-//       float4_input[j].x = input[i];
-
-//       if (i + 1 < LENGTH)
-//       {
-//         float4_input[j].y = input[i + 1];
-//       }
-//       else
-//       {
-//         float4_input[j].y = 0.0f;
-//       }
-//       if (i + 2 < LENGTH)
-//       {
-//         float4_input[j].z = input[i + 2];
-//       }
-//       else
-//       {
-//         float4_input[j].z = 0.0f;
-//       }
-//       if (i + 3 < LENGTH)
-//       {
-//         float4_input[j].w = input[i + 3];
-//       }
-//       else
-//       {
-//         float4_input[j].w = 0.0f;
-//       }
-//     }
 #pragma unroll
     for (int i = 0; i < float4_inp_len; ++i)
     {
@@ -130,7 +94,6 @@ ThreadReduce(T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH
   }
   else
   {
-    // printf("here\n");
 #pragma unroll
     for (int i = 0; i < LENGTH; ++i)
     {

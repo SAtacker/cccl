@@ -105,7 +105,7 @@ void deterministic_sum(nvbench::state& state, nvbench::type_list<T>)
   });
 }
 
-using types = nvbench::type_list<float>;
+using types = nvbench::type_list<float, double>;
 
 NVBENCH_BENCH_TYPES(deterministic_sum, NVBENCH_TYPE_AXES(types))
   .set_name("base")
