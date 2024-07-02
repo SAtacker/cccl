@@ -1563,11 +1563,11 @@ struct DeterministicDispatchReduce : SelectedPolicy
 
     OutputIteratorTransformT d_out_transformed = thrust::make_transform_output_iterator(d_out, AcumFloatTransformT{});
 
-    cub::detail::RFA_bins<accum_t> bins;
-    bins.initialize_bins();
-    memcpy(cub::detail::bin_host_buffer, &bins, sizeof(bins));
+    // cub::detail::RFA_bins<accum_t> bins;
+    // bins.initialize_bins();
+    // memcpy(cub::detail::bin_host_buffer, &bins, sizeof(bins));
 
-    cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
+    // cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
 
     return dispatch_reduce_t::Dispatch(
       d_temp_storage,

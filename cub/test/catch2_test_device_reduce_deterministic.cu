@@ -134,10 +134,10 @@ void deterministic_reduce_heterogenous(const int N)
   c2h::gen(CUB_SEED(2), input_device, min_val, max_val);
   c2h::host_vector<type> input_host = input_device;
 
-  cub::detail::RFA_bins<type> bins;
-  bins.initialize_bins();
-  memcpy(cub::detail::bin_host_buffer, &bins, sizeof(bins));
-  cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
+  // cub::detail::RFA_bins<type> bins;
+  // bins.initialize_bins();
+  // memcpy(cub::detail::bin_host_buffer, &bins, sizeof(bins));
+  // cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
 
   cub::detail::rfa_detail::deterministic_sum_t<type> op{};
   cub::detail::ReproducibleFloatingAccumulator<type> res =
@@ -194,10 +194,10 @@ CUB_TEST("Deterministic Device reduce works with float and double on cpu", "[red
   const int num_items = 42;
   c2h::host_vector<type> input(num_items, 1.0f);
 
-  cub::detail::RFA_bins<type> bins;
-  bins.initialize_bins();
-  memcpy(cub::detail::bin_host_buffer, &bins, sizeof(bins));
-  cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
+  // cub::detail::RFA_bins<type> bins;
+  // bins.initialize_bins();
+  // memcpy(cub::detail::bin_host_buffer, &bins, sizeof(bins));
+  // cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
 
   cub::detail::rfa_detail::deterministic_sum_t<type> op{};
   cub::detail::ReproducibleFloatingAccumulator<type> res =
@@ -213,10 +213,10 @@ CUB_TEST("Deterministic Device reduce works with float and double on cpu with kn
   using type                   = typename c2h::get<0, TestType>;
   c2h::host_vector<type> input = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f};
 
-  cub::detail::RFA_bins<type> bins;
-  bins.initialize_bins();
-  memcpy(cub::detail::bin_host_buffer, &bins, sizeof(bins));
-  cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
+  // cub::detail::RFA_bins<type> bins;
+  // bins.initialize_bins();
+  // memcpy(cub::detail::bin_host_buffer, &bins, sizeof(bins));
+  // cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
 
   cub::detail::rfa_detail::deterministic_sum_t<type> op{};
   cub::detail::ReproducibleFloatingAccumulator<type> res =
