@@ -416,10 +416,20 @@ struct AgentReduce
   {
     GridEvenShare<OffsetT> even_share;
     even_share.template BlockInit<TILE_ITEMS>(block_offset, block_end);
+    if constexpr ((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
+                   && std::is_same_v<InputIteratorT, const float*>)
+                  || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
+                      && std::is_same_v<InputIteratorT, const double*>) )
 
-    return (IsAligned(d_in + block_offset, Int2Type<ATTEMPT_VECTORIZATION>()))
-           ? ConsumeRange(even_share, Int2Type < true && ATTEMPT_VECTORIZATION > ())
-           : ConsumeRange(even_share, Int2Type < false && ATTEMPT_VECTORIZATION > ());
+    {
+      return ConsumeRange(even_share, Int2Type < true && ATTEMPT_VECTORIZATION > ());
+    }
+    else
+    {
+      return (IsAligned(d_in + block_offset, Int2Type<ATTEMPT_VECTORIZATION>()))
+             ? ConsumeRange(even_share, Int2Type < true && ATTEMPT_VECTORIZATION > ())
+             : ConsumeRange(even_share, Int2Type < false && ATTEMPT_VECTORIZATION > ());
+    }
   }
 
   /**
@@ -431,9 +441,19 @@ struct AgentReduce
     // Initialize GRID_MAPPING_STRIP_MINE even-share descriptor for this thread block
     even_share.template BlockInit<TILE_ITEMS, GRID_MAPPING_STRIP_MINE>();
 
-    return (IsAligned(d_in, Int2Type<ATTEMPT_VECTORIZATION>()))
-           ? ConsumeRange(even_share, Int2Type < true && ATTEMPT_VECTORIZATION > ())
-           : ConsumeRange(even_share, Int2Type < false && ATTEMPT_VECTORIZATION > ());
+    if constexpr ((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
+                   && std::is_same_v<InputIteratorT, const float*>)
+                  || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
+                      && std::is_same_v<InputIteratorT, const double*>) )
+    {
+      return ConsumeRange(even_share, Int2Type < true && ATTEMPT_VECTORIZATION > ());
+    }
+    else
+    {
+      return (IsAligned(d_in, Int2Type<ATTEMPT_VECTORIZATION>()))
+             ? ConsumeRange(even_share, Int2Type < true && ATTEMPT_VECTORIZATION > ())
+             : ConsumeRange(even_share, Int2Type < false && ATTEMPT_VECTORIZATION > ());
+    }
   }
 
 private:
