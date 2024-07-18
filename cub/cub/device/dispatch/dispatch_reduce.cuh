@@ -1104,15 +1104,18 @@ struct DispatchReduce : SelectedPolicy
             AccumT,
             TransformOpT>);
       }
-      return InvokeSingleTile<ActivePolicyT>(
-        DeviceReduceSingleTileKernel<MaxPolicyT,
-                                     InputIteratorT,
-                                     OutputIteratorT,
-                                     OffsetT,
-                                     ReductionOpT,
-                                     InitT,
-                                     AccumT,
-                                     TransformOpT>);
+      else
+      {
+        return InvokeSingleTile<ActivePolicyT>(
+          DeviceReduceSingleTileKernel<MaxPolicyT,
+                                       InputIteratorT,
+                                       OutputIteratorT,
+                                       OffsetT,
+                                       ReductionOpT,
+                                       InitT,
+                                       AccumT,
+                                       TransformOpT>);
+      }
     }
     else
     {
@@ -1137,17 +1140,19 @@ struct DispatchReduce : SelectedPolicy
             InitT,
             AccumT>);
       }
-
-      return InvokePasses<ActivePolicyT>(
-        DeviceReduceKernel<typename DispatchReduce::MaxPolicy, InputIteratorT, OffsetT, ReductionOpT, AccumT, TransformOpT>,
-        DeviceReduceSingleTileKernel<MaxPolicyT,
-                                     AccumT*,
-                                     OutputIteratorT,
-                                     int, // Always used with int
-                                          // offsets
-                                     ReductionOpT,
-                                     InitT,
-                                     AccumT>);
+      else
+      {
+        return InvokePasses<ActivePolicyT>(
+          DeviceReduceKernel<typename DispatchReduce::MaxPolicy, InputIteratorT, OffsetT, ReductionOpT, AccumT, TransformOpT>,
+          DeviceReduceSingleTileKernel<MaxPolicyT,
+                                       AccumT*,
+                                       OutputIteratorT,
+                                       int, // Always used with int
+                                            // offsets
+                                       ReductionOpT,
+                                       InitT,
+                                       AccumT>);
+      }
     }
   }
 

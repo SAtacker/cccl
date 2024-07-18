@@ -182,7 +182,7 @@ inline static auto abs_max(const T&);
 template <>
 __host__ __device__ auto abs_max(const float4& x)
 {
-  return fmax(fmaxf(fabs(x.x), fabs(x.y)), fmax(fabs(x.z), fabs(x.w)));
+  return fmaxf(fmaxf(fabs(x.x), fabs(x.y)), fmaxf(fabs(x.z), fabs(x.w)));
 }
 
 template <>
