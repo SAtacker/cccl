@@ -304,12 +304,12 @@ struct AgentReduce
 
     // Load items as vector items
     InputT input_items[ITEMS_PER_THREAD];
-    VectorT* vec_items = reinterpret_cast<VectorT*>(input_items);
-#pragma unroll
-    for (int i = 0; i < WORDS; ++i)
-    {
-      vec_items[i] = d_vec_in[BLOCK_THREADS * i];
-    }
+    VectorT* vec_items = reinterpret_cast<VectorT*>(d_in_unqualified);
+    // #pragma unroll
+    //     for (int i = 0; i < WORDS; ++i)
+    //     {
+    //       vec_items[i] = d_vec_in[BLOCK_THREADS * i];
+    //     }
 
     if constexpr ((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
                    && std::is_same_v<InputIteratorT, const float*>)
