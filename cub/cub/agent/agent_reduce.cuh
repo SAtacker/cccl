@@ -304,26 +304,26 @@ struct AgentReduce
 
     // Load items as vector items
     InputT input_items[ITEMS_PER_THREAD];
-    VectorT* vec_items = reinterpret_cast<VectorT*>(d_in_unqualified);
-    // #pragma unroll
-    //     for (int i = 0; i < WORDS; ++i)
-    //     {
-    //       vec_items[i] = d_vec_in[BLOCK_THREADS * i];
-    //     }
+    VectorT* vec_items = reinterpret_cast<VectorT*>(input_items);
+    #pragma unroll
+        for (int i = 0; i < WORDS; ++i)
+        {
+          vec_items[i] = d_vec_in[BLOCK_THREADS * i];
+        }
 
     if constexpr ((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
                    && std::is_same_v<InputIteratorT, const float*>)
                   || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
                       && std::is_same_v<InputIteratorT, const double*>) )
     {
-      std::remove_reference_t<decltype(transform_op(input_items[0]))> items[ITEMS_PER_THREAD];
-#pragma unroll
-      for (int i = 0; i < ITEMS_PER_THREAD; ++i)
-      {
-        items[i] = transform_op(input_items[i]);
-      }
+//       std::remove_reference_t<decltype(transform_op(input_items[0]))> items[ITEMS_PER_THREAD];
+// #pragma unroll
+//       for (int i = 0; i < ITEMS_PER_THREAD; ++i)
+//       {
+//         items[i] = transform_op(input_items[i]);
+//       }
       // Reduce items within each thread stripe
-      thread_aggregate = internal::ThreadReduce(items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{});
+      thread_aggregate = internal::ThreadReduce(d_in_unqualified, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{});
     }
     else
     {
