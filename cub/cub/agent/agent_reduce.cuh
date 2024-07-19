@@ -291,7 +291,30 @@ struct AgentReduce
     Int2Type<true> /*is_full_tile*/,
     Int2Type<true> /*can_vectorize*/)
   {
-    // Alias items as an array of VectorT and load it in striped fashion
+
+
+    if constexpr ((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
+                   && std::is_same_v<InputIteratorT, const float*>)
+                  || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
+                      && std::is_same_v<InputIteratorT, const double*>) )
+    {
+//       std::remove_reference_t<decltype(transform_op(input_items[0]))> items[ITEMS_PER_THREAD];
+// #pragma unroll
+//       for (int i = 0; i < ITEMS_PER_THREAD; ++i)
+//       {
+//         items[i] = transform_op(input_items[i]);
+//       }
+      // Reduce items within each thread stripe
+      AccumT items[ITEMS_PER_THREAD];
+
+      // Load items in striped fashion
+      cub::detail::load_transform_direct_striped<BLOCK_THREADS>(
+        threadIdx.x, d_wrapped_in + block_offset, items, transform_op);
+      thread_aggregate = internal::ThreadReduce(items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{});
+    }
+    else
+    {
+      // Alias items as an array of VectorT and load it in striped fashion
     enum
     {
       WORDS = ITEMS_PER_THREAD / VECTOR_LOAD_LENGTH
@@ -310,23 +333,6 @@ struct AgentReduce
         {
           vec_items[i] = d_vec_in[BLOCK_THREADS * i];
         }
-
-    if constexpr ((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
-                   && std::is_same_v<InputIteratorT, const float*>)
-                  || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
-                      && std::is_same_v<InputIteratorT, const double*>) )
-    {
-//       std::remove_reference_t<decltype(transform_op(input_items[0]))> items[ITEMS_PER_THREAD];
-// #pragma unroll
-//       for (int i = 0; i < ITEMS_PER_THREAD; ++i)
-//       {
-//         items[i] = transform_op(input_items[i]);
-//       }
-      // Reduce items within each thread stripe
-      thread_aggregate = internal::ThreadReduce(d_in_unqualified, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{});
-    }
-    else
-    {
       // Convert from input type to output type
       AccumT items[ITEMS_PER_THREAD];
 #pragma unroll
