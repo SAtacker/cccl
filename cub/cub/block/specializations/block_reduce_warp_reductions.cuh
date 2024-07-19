@@ -190,9 +190,12 @@ struct BlockReduceWarpReductions
     if (linear_tid == 0)
     {
       warp_aggregate = ApplyWarpAggregates<FULL_TILE>(reduction_op, warp_aggregate, num_valid, Int2Type<1>());
+      return warp_aggregate;
     }
-
-    return warp_aggregate;
+    else
+    {
+      return warp_aggregate;
+    }
   }
 
   /**

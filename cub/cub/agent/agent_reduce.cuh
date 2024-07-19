@@ -398,13 +398,15 @@ struct AgentReduce
       ConsumeTile<true>(thread_aggregate, even_share.block_offset, valid_items, Int2Type<false>(), can_vectorize);
       return BlockReduceT(temp_storage.reduce).Reduce(thread_aggregate, reduction_op, valid_items);
     }
+    else
+    {
+      // Extracting this into a function saves 8% of generated kernel size by allowing to reuse
+      // the block reduction below. This also workaround hang in nvcc.
+      ConsumeFullTileRange(thread_aggregate, even_share, can_vectorize);
 
-    // Extracting this into a function saves 8% of generated kernel size by allowing to reuse
-    // the block reduction below. This also workaround hang in nvcc.
-    ConsumeFullTileRange(thread_aggregate, even_share, can_vectorize);
-
-    // Compute block-wide reduction (all threads have valid items)
-    return BlockReduceT(temp_storage.reduce).Reduce(thread_aggregate, reduction_op);
+      // Compute block-wide reduction (all threads have valid items)
+      return BlockReduceT(temp_storage.reduce).Reduce(thread_aggregate, reduction_op);
+    }
   }
 
   /**
