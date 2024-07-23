@@ -72,27 +72,19 @@ _CCCL_DEVICE _CCCL_FORCEINLINE AccumT ThreadReduceHelper(
   // auto* float4_input           = reinterpret_cast<cub::CubVector<T, 4>*>(input);
   T abs_max_val = -1;
 
-#pragma unroll 1
+#pragma unroll
   for (int i = 0; i < LENGTH; ++i)
   {
     auto abs_f  = fabs(input[i]);
     abs_max_val = fmax(abs_f, abs_max_val);
   }
   retval.binned_dmdupdate(abs_max_val, 1, 1);
-#pragma unroll
-  for (int i = 0; i < float4_inp_len; ++i)
-  {
-    cub::CubVector<T, 4> float4_input;
-    float4_input.x = input[i * 4];
-    float4_input.y = input[i * 4 + 1];
-    float4_input.z = input[i * 4 + 2];
-    float4_input.w = input[i * 4 + 3];
-    // retval         = reduction_op(retval, float4_input);
 
-    retval.binned_dmddeposit(static_cast<T>(float4_input.x), 1);
-    retval.binned_dmddeposit(static_cast<T>(float4_input.y), 1);
-    retval.binned_dmddeposit(static_cast<T>(float4_input.z), 1);
-    retval.binned_dmddeposit(static_cast<T>(float4_input.w), 1);
+#pragma unroll
+  for (int i = 0; i < LENGTH; ++i)
+  {
+    // retval         = reduction_op(retval, float4_input);
+    retval.binned_dmddeposit(input[i], 1);
   }
 
   return retval;
