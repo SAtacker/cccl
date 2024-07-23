@@ -187,10 +187,10 @@ struct BlockReduceWarpReductions
     CTA_SYNC();
 
     // Update total aggregate in warp 0, lane 0
-    if (linear_tid == 0)
-    {
-      warp_aggregate = ApplyWarpAggregates<FULL_TILE>(reduction_op, warp_aggregate, num_valid, Int2Type<1>());
-    }
+
+    warp_aggregate = (linear_tid == 0)
+                     ? ApplyWarpAggregates<FULL_TILE>(reduction_op, warp_aggregate, num_valid, Int2Type<1>())
+                     : warp_aggregate;
 
     return warp_aggregate;
   }
