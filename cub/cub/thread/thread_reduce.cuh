@@ -67,11 +67,22 @@ _CCCL_DEVICE _CCCL_FORCEINLINE AccumT ThreadReduceHelper(
   AccumT retval = prefix;
 
   constexpr int float4_inp_len = LENGTH / 4;
-  auto* float4_input           = reinterpret_cast<cub::CubVector<T, 4>*>(input);
+  // float4 float4_input[float4_inp_len + 1];
+  // auto* float4_input           = reinterpret_cast<cub::CubVector<T, 4>*>(input);
 #pragma unroll
   for (int i = 0; i < float4_inp_len; ++i)
   {
-    retval = reduction_op(retval, float4_input[i]);
+    cub::CubVector<T, 4> float4_input;
+    float4_input.x = input[i * 4];
+    float4_input.y = input[i * 4 + 1];
+    float4_input.z = input[i * 4 + 2];
+    float4_input.w = input[i * 4 + 3];
+    // retval         = reduction_op(retval, float4_input);
+    retval.binned_dmdupdate(cub::detail::abs_max(float4_input), 1, 1);
+    retval.binned_dmddeposit(static_cast<T>(float4_input.x), 1);
+    retval.binned_dmddeposit(static_cast<T>(float4_input.y), 1);
+    retval.binned_dmddeposit(static_cast<T>(float4_input.z), 1);
+    retval.binned_dmddeposit(static_cast<T>(float4_input.w), 1);
   }
 
   return retval;

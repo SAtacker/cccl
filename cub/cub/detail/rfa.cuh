@@ -184,7 +184,39 @@ inline static auto abs_max(const T&);
 template <>
 __host__ __device__ auto abs_max(const float4& x)
 {
-  return fmaxf(fmaxf(fabs(x.x), fabs(x.y)), fmaxf(fabs(x.z), fabs(x.w)));
+  auto xx   = x.x;
+  auto xy   = x.y;
+  auto xz   = x.z;
+  auto xw   = x.w;
+  auto xy_m = fmaxf(fabs(xx), fabs(xy));
+  auto wz_m = fmaxf(fabs(xw), fabs(xz));
+  return fmaxf(xy_m, wz_m);
+}
+
+template <>
+__host__ __device__ auto abs_max(const cub::CubVector<float, 4>& x)
+{
+  auto xx   = x.x;
+  auto xy   = x.y;
+  auto xz   = x.z;
+  auto xw   = x.w;
+  auto xy_m = fmaxf(fabs(xx), fabs(xy));
+  auto wz_m = fmaxf(fabs(xw), fabs(xz));
+
+  return fmaxf(xy_m, wz_m);
+}
+
+template <>
+__host__ __device__ auto abs_max(const cub::CubVector<double, 4>& x)
+{
+  auto xx   = x.x;
+  auto xy   = x.y;
+  auto xz   = x.z;
+  auto xw   = x.w;
+  auto xy_m = fmax(fabs(xx), fabs(xy));
+  auto wz_m = fmax(fabs(xw), fabs(xz));
+
+  return fmax(xy_m, wz_m);
 }
 
 template <>
