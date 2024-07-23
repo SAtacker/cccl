@@ -591,11 +591,13 @@ private:
     //   int valid_items = even_share.block_end - even_share.block_offset;
     //   ConsumeTile<false>(thread_aggregate, even_share.block_offset, valid_items, Int2Type<false>(), can_vectorize);
     // }
-    while (even_share.block_offset < even_share.block_end)
+    auto const total  = even_share.block_end;
+    auto const stride = even_share.block_stride;
+
+#pragma unroll
+    for (auto i = even_share.block_offset; i < total; i += stride)
     {
-      ConsumeTileHelp<false>(
-        thread_aggregate, even_share.block_offset, Int2Type<true>(), Int2Type<true>{}, Int2Type<true>{});
-      even_share.block_offset += even_share.block_stride;
+      ConsumeTileHelp<false>(thread_aggregate, i, Int2Type<true>(), Int2Type<true>{}, Int2Type<true>{});
     }
   }
 
