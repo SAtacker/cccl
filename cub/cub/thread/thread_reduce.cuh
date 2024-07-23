@@ -55,6 +55,46 @@ CUB_NAMESPACE_BEGIN
 namespace internal
 {
 
+template <int LENGTH,
+          typename T,
+          typename ReductionOp,
+          typename PrefixT,
+          typename AccumT = detail::accumulator_t<ReductionOp, PrefixT, T>>
+_CCCL_DEVICE _CCCL_FORCEINLINE AccumT ThreadReduceHelper(
+  T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH> /*length*/, Int2Type<true> /* is rfa */)
+{
+  AccumT retval = prefix;
+
+  constexpr int float4_inp_len = LENGTH / 4;
+  auto* float4_input = reinterpret_cast<std::conditional_t<std::is_same_v<T, float>, float4, double4>*>(input);
+#pragma unroll
+  for (int i = 0; i < float4_inp_len; ++i)
+  {
+    retval = reduction_op(retval, float4_input[i]);
+  }
+
+  return retval;
+}
+
+template <int LENGTH,
+          typename T,
+          typename ReductionOp,
+          typename PrefixT,
+          typename AccumT = detail::accumulator_t<ReductionOp, PrefixT, T>>
+_CCCL_DEVICE _CCCL_FORCEINLINE AccumT ThreadReduceHelper(
+  T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH> /*length*/, Int2Type<false> /* is rfa */)
+{
+  AccumT retval = prefix;
+
+#pragma unroll
+  for (int i = 0; i < LENGTH; ++i)
+  {
+    retval = reduction_op(retval, input[i]);
+  }
+
+  return retval;
+}
+
 /**
  * @brief Sequential reduction over statically-sized array types
  *
@@ -75,33 +115,14 @@ template <int LENGTH,
 _CCCL_DEVICE _CCCL_FORCEINLINE AccumT
 ThreadReduce(T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH> /*length*/)
 {
-  AccumT retval = prefix;
-  if constexpr ((std::is_invocable_v<ReductionOp, detail::ReproducibleFloatingAccumulator<float>, float4>
-                 || std::is_invocable_v<ReductionOp, detail::ReproducibleFloatingAccumulator<double>, double4>)
-                && (std::is_convertible_v<T, float> || std::is_convertible_v<T, double>)
-                && (std::is_same_v<AccumT, detail::ReproducibleFloatingAccumulator<float>>
-                    || std::is_same_v<AccumT, detail::ReproducibleFloatingAccumulator<double>>) )
-  {
-    constexpr int float4_inp_len = LENGTH / 4;
-    auto* float4_input = reinterpret_cast<std::conditional_t<std::is_same_v<T, float>, float4, double4>*>(input);
-#pragma unroll
-    for (int i = 0; i < float4_inp_len; ++i)
-    {
-      retval = reduction_op(retval, float4_input[i]);
-    }
-
-    return retval;
-  }
-  else
-  {
-#pragma unroll
-    for (int i = 0; i < LENGTH; ++i)
-    {
-      retval = reduction_op(retval, input[i]);
-    }
-
-    return retval;
-  }
+  constexpr bool is_rfa =
+    (std::is_invocable_v<ReductionOp, detail::ReproducibleFloatingAccumulator<float>, float4>
+     || std::is_invocable_v<ReductionOp, detail::ReproducibleFloatingAccumulator<double>, double4>)
+    && (std::is_convertible_v<T, float> || std::is_convertible_v<T, double>)
+    && (std::is_same_v<AccumT, detail::ReproducibleFloatingAccumulator<float>>
+        || std::is_same_v<AccumT, detail::ReproducibleFloatingAccumulator<double>>);
+  return ThreadReduceHelper<LENGTH, T, ReductionOp, PrefixT, AccumT>(
+    input, reduction_op, prefix, Int2Type<LENGTH>{}, Int2Type<is_rfa>{});
 }
 
 /**
