@@ -48,6 +48,7 @@
 #include <cub/detail/rfa.cuh>
 #include <cub/detail/type_traits.cuh>
 #include <cub/thread/thread_operators.cuh>
+#include <cub/util_type.cuh>
 
 CUB_NAMESPACE_BEGIN
 
@@ -66,7 +67,7 @@ _CCCL_DEVICE _CCCL_FORCEINLINE AccumT ThreadReduceHelper(
   AccumT retval = prefix;
 
   constexpr int float4_inp_len = LENGTH / 4;
-  auto* float4_input = reinterpret_cast<std::conditional_t<std::is_same_v<T, float>, float4, double4>*>(input);
+  auto* float4_input           = reinterpret_cast<cub::CubVector<T, 4>*>(input);
 #pragma unroll
   for (int i = 0; i < float4_inp_len; ++i)
   {

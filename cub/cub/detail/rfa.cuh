@@ -56,6 +56,8 @@ using std::array;
 using std::max;
 using std::min;
 #else
+#  include <cub/util_type.cuh>
+
 #  include <cuda/std/__algorithm_>
 #  include <cuda/std/array>
 using cuda::std::array;
@@ -1230,6 +1232,16 @@ public:
   /// Accumulate a float4 @p x into the binned fp.
   /// NOTE: Casts @p x to the type of the binned fp
   __host__ __device__ ReproducibleFloatingAccumulator& operator+=(const float4& x)
+  {
+    binned_dmdupdate(abs_max(x), 1, 1);
+    binned_dmddeposit(static_cast<ftype>(x.x), 1);
+    binned_dmddeposit(static_cast<ftype>(x.y), 1);
+    binned_dmddeposit(static_cast<ftype>(x.z), 1);
+    binned_dmddeposit(static_cast<ftype>(x.w), 1);
+    return *this;
+  }
+
+  __host__ __device__ ReproducibleFloatingAccumulator& operator+=(const cub::CubVector<ftype, 4>& x)
   {
     binned_dmdupdate(abs_max(x), 1, 1);
     binned_dmddeposit(static_cast<ftype>(x.x), 1);
