@@ -72,7 +72,7 @@ _CCCL_DEVICE _CCCL_FORCEINLINE AccumT ThreadReduceHelper(
   // auto* float4_input           = reinterpret_cast<cub::CubVector<T, 4>*>(input);
   T abs_max_val = -1;
 
-#pragma unroll
+#pragma unroll 1
   for (int i = 0; i < LENGTH; ++i)
   {
     auto abs_f  = fabs(input[i]);
