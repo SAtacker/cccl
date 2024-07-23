@@ -596,7 +596,8 @@ private:
     // }
     while (even_share.block_offset < even_share.block_end)
     {
-      ConsumeTile<false>(thread_aggregate, even_share.block_offset, TILE_ITEMS, Int2Type<true>(), can_vectorize);
+      ConsumeTileHelp<false>(
+        thread_aggregate, even_share.block_offset, Int2Type<true>(), Int2Type<true>{}, Int2Type<true>{});
       even_share.block_offset += even_share.block_stride;
     }
   }
