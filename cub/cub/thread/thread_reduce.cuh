@@ -63,22 +63,20 @@ template <int LENGTH,
           typename PrefixT,
           typename AccumT = detail::accumulator_t<ReductionOp, PrefixT, T>>
 _CCCL_DEVICE _CCCL_FORCEINLINE AccumT ThreadReduceHelper(
-  T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH> /*length*/, Int2Type<true> /* is rfa */)
+  T* input,
+  ReductionOp reduction_op,
+  PrefixT prefix,
+  Int2Type<LENGTH> /*length*/,
+  Int2Type<true> /* is rfa */,
+  T input_max = {})
 {
   AccumT retval = prefix;
 
   constexpr int float4_inp_len = LENGTH / 4;
   // float4 float4_input[float4_inp_len + 1];
   // auto* float4_input           = reinterpret_cast<cub::CubVector<T, 4>*>(input);
-  //   T abs_max_val = -1;
 
-  // #pragma unroll
-  //   for (int i = 0; i < LENGTH; ++i)
-  //   {
-  //     auto abs_f  = fabs(input[i]);
-  //     abs_max_val = fmax(abs_f, abs_max_val);
-  //   }
-  //   retval.binned_dmdupdate(abs_max_val, 1, 1);
+  retval.binned_dmdupdate(input_max, 1, 1);
 
 #pragma unroll
   for (int i = 0; i < LENGTH; ++i)
@@ -96,7 +94,12 @@ template <int LENGTH,
           typename PrefixT,
           typename AccumT = detail::accumulator_t<ReductionOp, PrefixT, T>>
 _CCCL_DEVICE _CCCL_FORCEINLINE AccumT ThreadReduceHelper(
-  T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH> /*length*/, Int2Type<false> /* is rfa */)
+  T* input,
+  ReductionOp reduction_op,
+  PrefixT prefix,
+  Int2Type<LENGTH> /*length*/,
+  Int2Type<false> /* is rfa */,
+  T input_max = {})
 {
   AccumT retval = prefix;
 
@@ -127,7 +130,7 @@ template <int LENGTH,
           typename PrefixT,
           typename AccumT = detail::accumulator_t<ReductionOp, PrefixT, T>>
 _CCCL_DEVICE _CCCL_FORCEINLINE AccumT
-ThreadReduce(T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH> /*length*/)
+ThreadReduce(T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH> /*length*/, T input_max = {})
 {
   constexpr bool is_rfa =
     (std::is_invocable_v<ReductionOp, detail::ReproducibleFloatingAccumulator<float>, float4>
@@ -136,7 +139,7 @@ ThreadReduce(T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH
     && (std::is_same_v<AccumT, detail::ReproducibleFloatingAccumulator<float>>
         || std::is_same_v<AccumT, detail::ReproducibleFloatingAccumulator<double>>);
   return ThreadReduceHelper<LENGTH, T, ReductionOp, PrefixT, AccumT>(
-    input, reduction_op, prefix, Int2Type<LENGTH>{}, Int2Type<is_rfa>{});
+    input, reduction_op, prefix, Int2Type<LENGTH>{}, Int2Type<is_rfa>{}, input_max);
 }
 
 /**
