@@ -35,6 +35,7 @@
 
 #include <cub/config.cuh>
 
+#include <cmath>
 #include <type_traits>
 
 #if defined(_CCCL_IMPLICIT_SYSTEM_HEADER_GCC)
@@ -69,6 +70,18 @@ _CCCL_DEVICE _CCCL_FORCEINLINE AccumT ThreadReduceHelper(
   constexpr int float4_inp_len = LENGTH / 4;
   // float4 float4_input[float4_inp_len + 1];
   // auto* float4_input           = reinterpret_cast<cub::CubVector<T, 4>*>(input);
+  T abs_max_val = -MAXFLOAT;
+
+#pragma unroll
+  for (int i = 0; i < LENGTH; ++i)
+  {
+    auto abs_f = fabs(input[i]);
+    if (abs_f > abs_max_val)
+    {
+      abs_max_val = abs_f;
+    }
+  }
+  retval.binned_dmdupdate(abs_max_val, 1, 1);
 #pragma unroll
   for (int i = 0; i < float4_inp_len; ++i)
   {
@@ -78,7 +91,7 @@ _CCCL_DEVICE _CCCL_FORCEINLINE AccumT ThreadReduceHelper(
     float4_input.z = input[i * 4 + 2];
     float4_input.w = input[i * 4 + 3];
     // retval         = reduction_op(retval, float4_input);
-    retval.binned_dmdupdate(cub::detail::abs_max(float4_input), 1, 1);
+
     retval.binned_dmddeposit(static_cast<T>(float4_input.x), 1);
     retval.binned_dmddeposit(static_cast<T>(float4_input.y), 1);
     retval.binned_dmddeposit(static_cast<T>(float4_input.z), 1);
