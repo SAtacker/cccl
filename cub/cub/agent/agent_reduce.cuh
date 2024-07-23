@@ -477,10 +477,7 @@ struct AgentReduce
       || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
           && std::is_same_v<InputIteratorT, const double*>);
 
-    return (IsAligned(d_in + block_offset, Int2Type < ATTEMPT_VECTORIZATION || rfa_enable_vectorization > ())
-            || rfa_enable_vectorization)
-           ? ConsumeRange(even_share, Int2Type < true && ATTEMPT_VECTORIZATION > ())
-           : ConsumeRange(even_share, Int2Type < false && ATTEMPT_VECTORIZATION > ());
+    return ConsumeRange(even_share, Int2Type < true && ATTEMPT_VECTORIZATION > ());
   }
 
   /**
