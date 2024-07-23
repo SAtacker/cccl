@@ -1083,6 +1083,16 @@ struct DispatchReduce : SelectedPolicy
   template <typename ActivePolicyT>
   CUB_RUNTIME_FUNCTION _CCCL_FORCEINLINE cudaError_t Invoke()
   {
+    return InvokeHelp<ActivePolicyT>(
+      std::integral_constant < bool,
+      std::is_same_v<AccumT, detail::ReproducibleFloatingAccumulator<double>> || std::is_same_v < AccumT,
+      detail::ReproducibleFloatingAccumulator < float >>> {});
+  }
+
+  /// Invocation
+  template <typename ActivePolicyT>
+  CUB_RUNTIME_FUNCTION _CCCL_FORCEINLINE cudaError_t InvokeHelp(std::false_type)
+  {
     using SingleTilePolicyT = typename ActivePolicyT::SingleTilePolicy;
     using MaxPolicyT        = typename DispatchReduce::MaxPolicy;
 
@@ -1090,69 +1100,70 @@ struct DispatchReduce : SelectedPolicy
     if (num_items <= (SingleTilePolicyT::BLOCK_THREADS * SingleTilePolicyT::ITEMS_PER_THREAD))
     {
       // Small, single tile size
-      if constexpr (std::is_same_v<AccumT, detail::ReproducibleFloatingAccumulator<float>>
-                    || std::is_same_v<AccumT, detail::ReproducibleFloatingAccumulator<double>>)
-      {
-        return InvokeSingleTile<ActivePolicyT>(
-          DeterministicDeviceReduceSingleTileKernel<
-            MaxPolicyT,
-            InputIteratorT,
-            OutputIteratorT,
-            OffsetT,
-            ReductionOpT,
-            InitT,
-            AccumT,
-            TransformOpT>);
-      }
-      else
-      {
-        return InvokeSingleTile<ActivePolicyT>(
-          DeviceReduceSingleTileKernel<MaxPolicyT,
-                                       InputIteratorT,
-                                       OutputIteratorT,
-                                       OffsetT,
-                                       ReductionOpT,
-                                       InitT,
-                                       AccumT,
-                                       TransformOpT>);
-      }
+      return InvokeSingleTile<ActivePolicyT>(
+        DeviceReduceSingleTileKernel<MaxPolicyT,
+                                     InputIteratorT,
+                                     OutputIteratorT,
+                                     OffsetT,
+                                     ReductionOpT,
+                                     InitT,
+                                     AccumT,
+                                     TransformOpT>);
     }
     else
     {
-      // Regular size
-      if constexpr (std::is_same_v<AccumT, detail::ReproducibleFloatingAccumulator<float>>
-                    || std::is_same_v<AccumT, detail::ReproducibleFloatingAccumulator<double>>)
-      {
-        return InvokePasses<ActivePolicyT>(
-          DeterministicDeviceReduceKernel<typename DispatchReduce::MaxPolicy,
-                                          InputIteratorT,
-                                          OffsetT,
-                                          ReductionOpT,
-                                          AccumT,
-                                          TransformOpT>,
-          DeterministicDeviceReduceSingleTileKernel<
-            MaxPolicyT,
-            AccumT*,
-            OutputIteratorT,
-            int, // Always used with int
-                 // offsets
-            ReductionOpT,
-            InitT,
-            AccumT>);
-      }
-      else
-      {
-        return InvokePasses<ActivePolicyT>(
-          DeviceReduceKernel<typename DispatchReduce::MaxPolicy, InputIteratorT, OffsetT, ReductionOpT, AccumT, TransformOpT>,
-          DeviceReduceSingleTileKernel<MaxPolicyT,
-                                       AccumT*,
-                                       OutputIteratorT,
-                                       int, // Always used with int
-                                            // offsets
-                                       ReductionOpT,
-                                       InitT,
-                                       AccumT>);
-      }
+      return InvokePasses<ActivePolicyT>(
+        DeviceReduceKernel<typename DispatchReduce::MaxPolicy, InputIteratorT, OffsetT, ReductionOpT, AccumT, TransformOpT>,
+        DeviceReduceSingleTileKernel<MaxPolicyT,
+                                     AccumT*,
+                                     OutputIteratorT,
+                                     int, // Always used with int
+                                          // offsets
+                                     ReductionOpT,
+                                     InitT,
+                                     AccumT>);
+    }
+  }
+
+  /// Invocation Deterministic
+  template <typename ActivePolicyT>
+  CUB_RUNTIME_FUNCTION _CCCL_FORCEINLINE cudaError_t InvokeHelp(std::true_type)
+  {
+    using SingleTilePolicyT = typename ActivePolicyT::SingleTilePolicy;
+    using MaxPolicyT        = typename DispatchReduce::MaxPolicy;
+
+    // Force kernel code-generation in all compiler passes
+    if (num_items <= (SingleTilePolicyT::BLOCK_THREADS * SingleTilePolicyT::ITEMS_PER_THREAD))
+    {
+      return InvokeSingleTile<ActivePolicyT>(
+        DeterministicDeviceReduceSingleTileKernel<
+          MaxPolicyT,
+          InputIteratorT,
+          OutputIteratorT,
+          OffsetT,
+          ReductionOpT,
+          InitT,
+          AccumT,
+          TransformOpT>);
+    }
+    else
+    {
+      return InvokePasses<ActivePolicyT>(
+        DeterministicDeviceReduceKernel<typename DispatchReduce::MaxPolicy,
+                                        InputIteratorT,
+                                        OffsetT,
+                                        ReductionOpT,
+                                        AccumT,
+                                        TransformOpT>,
+        DeterministicDeviceReduceSingleTileKernel<
+          MaxPolicyT,
+          AccumT*,
+          OutputIteratorT,
+          int, // Always used with int
+               // offsets
+          ReductionOpT,
+          InitT,
+          AccumT>);
     }
   }
 

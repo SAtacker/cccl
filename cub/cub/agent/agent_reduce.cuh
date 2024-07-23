@@ -232,6 +232,42 @@ struct AgentReduce
   //---------------------------------------------------------------------
   // Tile consumption
   //---------------------------------------------------------------------
+  template <int IS_FIRST_TILE>
+  _CCCL_DEVICE _CCCL_FORCEINLINE void ConsumeTileHelp(
+    AccumT& thread_aggregate,
+    OffsetT block_offset,
+    Int2Type<true> /*is_full_tile*/,
+    Int2Type<false> /*can_vectorize*/,
+    Int2Type<true> /*is RFA*/)
+  {
+    std::remove_reference_t<decltype(transform_op(d_wrapped_in[0]))> items[ITEMS_PER_THREAD];
+
+    // Load items in striped fashion
+    cub::detail::load_transform_direct_striped<BLOCK_THREADS>(
+      threadIdx.x, d_wrapped_in + block_offset, items, transform_op);
+
+    // Reduce items within each thread stripe
+    thread_aggregate = internal::ThreadReduce(items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{});
+  }
+
+  template <int IS_FIRST_TILE>
+  _CCCL_DEVICE _CCCL_FORCEINLINE void ConsumeTileHelp(
+    AccumT& thread_aggregate,
+    OffsetT block_offset,
+    Int2Type<true> /*is_full_tile*/,
+    Int2Type<false> /*can_vectorize*/,
+    Int2Type<false> /*is RFA*/)
+  {
+    AccumT items[ITEMS_PER_THREAD];
+
+    // Load items in striped fashion
+    cub::detail::load_transform_direct_striped<BLOCK_THREADS>(
+      threadIdx.x, d_wrapped_in + block_offset, items, transform_op);
+
+    // Reduce items within each thread stripe
+    thread_aggregate = (IS_FIRST_TILE) ? internal::ThreadReduce(items, reduction_op)
+                                       : internal::ThreadReduce(items, reduction_op, thread_aggregate);
+  }
 
   /**
    * @brief Consume a full tile of input (non-vectorized)
@@ -248,48 +284,22 @@ struct AgentReduce
     Int2Type<true> /*is_full_tile*/,
     Int2Type<false> /*can_vectorize*/)
   {
-    if constexpr ((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
-                   && std::is_same_v<InputIteratorT, const float*>)
-                  || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
-                      && std::is_same_v<InputIteratorT, const double*>) )
-    {
-      std::remove_reference_t<decltype(transform_op(d_wrapped_in[0]))> items[ITEMS_PER_THREAD];
-
-      // Load items in striped fashion
-      cub::detail::load_transform_direct_striped<BLOCK_THREADS>(
-        threadIdx.x, d_wrapped_in + block_offset, items, transform_op);
-
-      // Reduce items within each thread stripe
-      thread_aggregate = internal::ThreadReduce(items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{});
-    }
-    else
-    {
-      AccumT items[ITEMS_PER_THREAD];
-
-      // Load items in striped fashion
-      cub::detail::load_transform_direct_striped<BLOCK_THREADS>(
-        threadIdx.x, d_wrapped_in + block_offset, items, transform_op);
-
-      // Reduce items within each thread stripe
-      thread_aggregate = (IS_FIRST_TILE) ? internal::ThreadReduce(items, reduction_op)
-                                         : internal::ThreadReduce(items, reduction_op, thread_aggregate);
-    }
+    Int2Type<((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
+               && std::is_same_v<InputIteratorT, const float*>)
+              || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
+                  && std::is_same_v<InputIteratorT, const double*>) )>
+      consume_tile_help_type;
+    ConsumeTileHelp<IS_FIRST_TILE>(
+      thread_aggregate, block_offset, Int2Type<true>{}, Int2Type<false>{}, consume_tile_help_type);
   }
 
-  /**
-   * Consume a full tile of input (vectorized)
-   * @param block_offset The offset the tile to consume
-   * @param valid_items The number of valid items in the tile
-   * @param is_full_tile Whether or not this is a full tile
-   * @param can_vectorize Whether or not we can vectorize loads
-   */
   template <int IS_FIRST_TILE>
-  _CCCL_DEVICE _CCCL_FORCEINLINE void ConsumeTile(
+  _CCCL_DEVICE _CCCL_FORCEINLINE void ConsumeTileHelp(
     AccumT& thread_aggregate,
     OffsetT block_offset,
-    int /*valid_items*/,
     Int2Type<true> /*is_full_tile*/,
-    Int2Type<true> /*can_vectorize*/)
+    Int2Type<true> /*can_vectorize*/,
+    Int2Type<true> /*is RFA*/)
   {
     // Alias items as an array of VectorT and load it in striped fashion
     enum
@@ -311,34 +321,79 @@ struct AgentReduce
       vec_items[i] = d_vec_in[BLOCK_THREADS * i];
     }
 
-    if constexpr ((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
-                   && std::is_same_v<InputIteratorT, const float*>)
-                  || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
-                      && std::is_same_v<InputIteratorT, const double*>) )
-    {
-      std::remove_reference_t<decltype(transform_op(input_items[0]))> items[ITEMS_PER_THREAD];
+    std::remove_reference_t<decltype(transform_op(input_items[0]))> items[ITEMS_PER_THREAD];
 #pragma unroll
-      for (int i = 0; i < ITEMS_PER_THREAD; ++i)
-      {
-        items[i] = transform_op(input_items[i]);
-      }
-      // Reduce items within each thread stripe
-      thread_aggregate = internal::ThreadReduce(items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{});
+    for (int i = 0; i < ITEMS_PER_THREAD; ++i)
+    {
+      items[i] = transform_op(input_items[i]);
     }
-    else
-    {
-      // Convert from input type to output type
-      AccumT items[ITEMS_PER_THREAD];
-#pragma unroll
-      for (int i = 0; i < ITEMS_PER_THREAD; ++i)
-      {
-        items[i] = transform_op(input_items[i]);
-      }
+    // Reduce items within each thread stripe
+    thread_aggregate = internal::ThreadReduce(items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{});
+  }
 
-      // Reduce items within each thread stripe
-      thread_aggregate = (IS_FIRST_TILE) ? internal::ThreadReduce(items, reduction_op)
-                                         : internal::ThreadReduce(items, reduction_op, thread_aggregate);
+  template <int IS_FIRST_TILE>
+  _CCCL_DEVICE _CCCL_FORCEINLINE void ConsumeTileHelp(
+    AccumT& thread_aggregate,
+    OffsetT block_offset,
+    Int2Type<true> /*is_full_tile*/,
+    Int2Type<true> /*can_vectorize*/,
+    Int2Type<false> /*is RFA*/)
+  {
+    // Alias items as an array of VectorT and load it in striped fashion
+    enum
+    {
+      WORDS = ITEMS_PER_THREAD / VECTOR_LOAD_LENGTH
+    };
+
+    // Fabricate a vectorized input iterator
+    InputT* d_in_unqualified = const_cast<InputT*>(d_in) + block_offset + (threadIdx.x * VECTOR_LOAD_LENGTH);
+    CacheModifiedInputIterator<AgentReducePolicy::LOAD_MODIFIER, VectorT, OffsetT> d_vec_in(
+      reinterpret_cast<VectorT*>(d_in_unqualified));
+
+    // Load items as vector items
+    InputT input_items[ITEMS_PER_THREAD];
+    VectorT* vec_items = reinterpret_cast<VectorT*>(input_items);
+#pragma unroll
+    for (int i = 0; i < WORDS; ++i)
+    {
+      vec_items[i] = d_vec_in[BLOCK_THREADS * i];
     }
+
+    // Convert from input type to output type
+    AccumT items[ITEMS_PER_THREAD];
+#pragma unroll
+    for (int i = 0; i < ITEMS_PER_THREAD; ++i)
+    {
+      items[i] = transform_op(input_items[i]);
+    }
+
+    // Reduce items within each thread stripe
+    thread_aggregate = (IS_FIRST_TILE) ? internal::ThreadReduce(items, reduction_op)
+                                       : internal::ThreadReduce(items, reduction_op, thread_aggregate);
+  }
+
+  /**
+   * Consume a full tile of input (vectorized)
+   * @param block_offset The offset the tile to consume
+   * @param valid_items The number of valid items in the tile
+   * @param is_full_tile Whether or not this is a full tile
+   * @param can_vectorize Whether or not we can vectorize loads
+   */
+  template <int IS_FIRST_TILE>
+  _CCCL_DEVICE _CCCL_FORCEINLINE void ConsumeTile(
+    AccumT& thread_aggregate,
+    OffsetT block_offset,
+    int /*valid_items*/,
+    Int2Type<true> /*is_full_tile*/,
+    Int2Type<true> /*can_vectorize*/)
+  {
+    Int2Type<((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
+               && std::is_same_v<InputIteratorT, const float*>)
+              || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
+                  && std::is_same_v<InputIteratorT, const double*>) )>
+      consume_tile_vectorized_helper;
+    ConsumeTileHelp<IS_FIRST_TILE>(
+      thread_aggregate, block_offset, Int2Type<true>{}, Int2Type<true>{}, consume_tile_vectorized_helper);
   }
 
   /**
@@ -416,20 +471,16 @@ struct AgentReduce
   {
     GridEvenShare<OffsetT> even_share;
     even_share.template BlockInit<TILE_ITEMS>(block_offset, block_end);
-    if constexpr ((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
-                   && std::is_same_v<InputIteratorT, const float*>)
-                  || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
-                      && std::is_same_v<InputIteratorT, const double*>) )
+    constexpr bool rfa_enable_vectorization =
+      (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
+       && std::is_same_v<InputIteratorT, const float*>)
+      || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
+          && std::is_same_v<InputIteratorT, const double*>);
 
-    {
-      return ConsumeRange(even_share, Int2Type < true && ATTEMPT_VECTORIZATION > ());
-    }
-    else
-    {
-      return (IsAligned(d_in + block_offset, Int2Type<ATTEMPT_VECTORIZATION>()))
-             ? ConsumeRange(even_share, Int2Type < true && ATTEMPT_VECTORIZATION > ())
-             : ConsumeRange(even_share, Int2Type < false && ATTEMPT_VECTORIZATION > ());
-    }
+    return (IsAligned(d_in + block_offset, Int2Type < ATTEMPT_VECTORIZATION || rfa_enable_vectorization > ())
+            || rfa_enable_vectorization)
+           ? ConsumeRange(even_share, Int2Type < true && ATTEMPT_VECTORIZATION > ())
+           : ConsumeRange(even_share, Int2Type < false && ATTEMPT_VECTORIZATION > ());
   }
 
   /**
@@ -440,20 +491,16 @@ struct AgentReduce
   {
     // Initialize GRID_MAPPING_STRIP_MINE even-share descriptor for this thread block
     even_share.template BlockInit<TILE_ITEMS, GRID_MAPPING_STRIP_MINE>();
+    constexpr bool rfa_enable_vectorization =
+      (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
+       && std::is_same_v<InputIteratorT, const float*>)
+      || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
+          && std::is_same_v<InputIteratorT, const double*>);
 
-    if constexpr ((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
-                   && std::is_same_v<InputIteratorT, const float*>)
-                  || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
-                      && std::is_same_v<InputIteratorT, const double*>) )
-    {
-      return ConsumeRange(even_share, Int2Type < true && ATTEMPT_VECTORIZATION > ());
-    }
-    else
-    {
-      return (IsAligned(d_in, Int2Type<ATTEMPT_VECTORIZATION>()))
-             ? ConsumeRange(even_share, Int2Type < true && ATTEMPT_VECTORIZATION > ())
-             : ConsumeRange(even_share, Int2Type < false && ATTEMPT_VECTORIZATION > ());
-    }
+    return (IsAligned(d_in, Int2Type < ATTEMPT_VECTORIZATION || rfa_enable_vectorization > ())
+            || rfa_enable_vectorization)
+           ? ConsumeRange(even_share, Int2Type < true && ATTEMPT_VECTORIZATION > ())
+           : ConsumeRange(even_share, Int2Type < false && ATTEMPT_VECTORIZATION > ());
   }
 
 private:
@@ -463,8 +510,11 @@ private:
    * @param can_vectorize Whether or not we can vectorize loads
    */
   template <int CAN_VECTORIZE>
-  _CCCL_DEVICE _CCCL_FORCEINLINE void ConsumeFullTileRange(
-    AccumT& thread_aggregate, GridEvenShare<OffsetT>& even_share, Int2Type<CAN_VECTORIZE> can_vectorize)
+  _CCCL_DEVICE _CCCL_FORCEINLINE void ConsumeFullTileRangeHelper(
+    AccumT& thread_aggregate,
+    GridEvenShare<OffsetT>& even_share,
+    Int2Type<CAN_VECTORIZE> can_vectorize,
+    Int2Type<false> /* is rfa */)
   {
     // At least one full block
     ConsumeTile<true>(thread_aggregate, even_share.block_offset, TILE_ITEMS, Int2Type<true>(), can_vectorize);
@@ -498,6 +548,75 @@ private:
       int valid_items = even_share.block_end - even_share.block_offset;
       ConsumeTile<false>(thread_aggregate, even_share.block_offset, valid_items, Int2Type<false>(), can_vectorize);
     }
+  }
+
+  /**
+   * @brief Reduce a contiguous segment of input tiles with more than `TILE_ITEMS` elements
+   * @param even_share GridEvenShare descriptor
+   * @param can_vectorize Whether or not we can vectorize loads
+   */
+  template <int CAN_VECTORIZE>
+  _CCCL_DEVICE _CCCL_FORCEINLINE void ConsumeFullTileRangeHelper(
+    AccumT& thread_aggregate,
+    GridEvenShare<OffsetT>& even_share,
+    Int2Type<CAN_VECTORIZE> can_vectorize,
+    Int2Type<true> /* is rfa */)
+  {
+    // // At least one full block
+    // ConsumeTile<true>(thread_aggregate, even_share.block_offset, TILE_ITEMS, Int2Type<true>(), can_vectorize);
+
+    // if (even_share.block_end - even_share.block_offset < even_share.block_stride)
+    // {
+    //   // Exit early to handle offset overflow
+    //   return;
+    // }
+
+    // even_share.block_offset += even_share.block_stride;
+
+    // // Consume subsequent full tiles of input, at least one full tile was processed, so
+    // // `even_share.block_end >= TILE_ITEMS`
+    // while (even_share.block_offset <= even_share.block_end - TILE_ITEMS)
+    // {
+    //   ConsumeTile<false>(thread_aggregate, even_share.block_offset, TILE_ITEMS, Int2Type<true>(), can_vectorize);
+
+    //   if (even_share.block_end - even_share.block_offset < even_share.block_stride)
+    //   {
+    //     // Exit early to handle offset overflow
+    //     return;
+    //   }
+
+    //   even_share.block_offset += even_share.block_stride;
+    // }
+
+    // // Consume a partially-full tile
+    // if (even_share.block_offset < even_share.block_end)
+    // {
+    //   int valid_items = even_share.block_end - even_share.block_offset;
+    //   ConsumeTile<false>(thread_aggregate, even_share.block_offset, valid_items, Int2Type<false>(), can_vectorize);
+    // }
+    while (even_share.block_offset < even_share.block_end)
+    {
+      ConsumeTile<false>(thread_aggregate, even_share.block_offset, TILE_ITEMS, Int2Type<true>(), can_vectorize);
+      even_share.block_offset += even_share.block_stride;
+    }
+  }
+
+  /**
+   * @brief Reduce a contiguous segment of input tiles with more than `TILE_ITEMS` elements
+   * @param even_share GridEvenShare descriptor
+   * @param can_vectorize Whether or not we can vectorize loads
+   */
+  template <int CAN_VECTORIZE>
+  _CCCL_DEVICE _CCCL_FORCEINLINE void ConsumeFullTileRange(
+    AccumT& thread_aggregate, GridEvenShare<OffsetT>& even_share, Int2Type<CAN_VECTORIZE> can_vectorize)
+  {
+    Int2Type<((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
+               && std::is_same_v<InputIteratorT, const float*>)
+              || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
+                  && std::is_same_v<InputIteratorT, const double*>) )>
+      consume_full_tile_range_helper;
+
+    ConsumeFullTileRangeHelper(thread_aggregate, even_share, can_vectorize, consume_full_tile_range_helper);
   }
 };
 
