@@ -446,13 +446,13 @@ struct AgentReduce
   {
     AccumT thread_aggregate{};
 
-    if (even_share.block_end - even_share.block_offset < TILE_ITEMS)
-    {
-      // First tile isn't full (not all threads have valid items)
-      int valid_items = even_share.block_end - even_share.block_offset;
-      ConsumeTile<true>(thread_aggregate, even_share.block_offset, valid_items, Int2Type<false>(), can_vectorize);
-      return BlockReduceT(temp_storage.reduce).Reduce(thread_aggregate, reduction_op, valid_items);
-    }
+    // if (even_share.block_end - even_share.block_offset < TILE_ITEMS)
+    // {
+    //   // First tile isn't full (not all threads have valid items)
+    //   int valid_items = even_share.block_end - even_share.block_offset;
+    //   ConsumeTile<true>(thread_aggregate, even_share.block_offset, valid_items, Int2Type<false>(), can_vectorize);
+    //   return BlockReduceT(temp_storage.reduce).Reduce(thread_aggregate, reduction_op, valid_items);
+    // }
 
     // Extracting this into a function saves 8% of generated kernel size by allowing to reuse
     // the block reduction below. This also workaround hang in nvcc.
