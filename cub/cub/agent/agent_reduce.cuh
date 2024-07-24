@@ -328,10 +328,10 @@ struct AgentReduce
       items[i] = transform_op(input_items[i]);
     }
 
-    InputT abs_max_val = -1;
+    InputT abs_max_val = items[0];
 
 #pragma unroll
-    for (int i = 0; i < ITEMS_PER_THREAD; ++i)
+    for (int i = 1; i < ITEMS_PER_THREAD; ++i)
     {
       auto abs_f  = fabs(items[i]);
       abs_max_val = fmax(abs_f, abs_max_val);
@@ -632,13 +632,13 @@ private:
         items[i] = transform_op(input_items[i]);
       }
 
-      InputT abs_max_val = -1;
+      InputT abs_max_val = items[0];
 
 #pragma unroll
       for (int i = 0; i < ITEMS_PER_THREAD; ++i)
       {
         auto abs_f  = fabs(items[i]);
-        abs_max_val = (abs_f > abs_max_val) * abs_f + (abs_f <= abs_max_val) * abs_max_val;
+        abs_max_val = fmax(abs_f, abs_max_val);
       }
 
       // Reduce items within each thread stripe
