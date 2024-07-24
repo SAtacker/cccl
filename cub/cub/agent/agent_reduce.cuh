@@ -632,20 +632,18 @@ private:
         items[i] = transform_op(input_items[i]);
       }
 
-      __shared__ InputT abs_max_val[BLOCK_THREADS];
-
-      abs_max_val[threadIdx.x] = -1;
+      InputT abs_max_val = -1;
 
 #pragma unroll
       for (int i = 0; i < ITEMS_PER_THREAD; ++i)
       {
-        auto abs_f               = fabs(items[i]);
-        abs_max_val[threadIdx.x] = fmax(abs_f, abs_max_val[threadIdx.x]);
+        auto abs_f  = fabs(items[i]);
+        abs_max_val = (abs_f > abs_max_val) * abs_f + (abs_f <= abs_max_val) * abs_max_val;
       }
 
       // Reduce items within each thread stripe
-      thread_aggregate = internal::ThreadReduce(
-        items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{}, abs_max_val[threadIdx.x]);
+      thread_aggregate =
+        internal::ThreadReduce(items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{}, abs_max_val);
     }
   }
 
