@@ -625,25 +625,25 @@ private:
         vec_items[i] = d_vec_in[BLOCK_THREADS * i];
       }
 
-      std::remove_reference_t<decltype(transform_op(input_items[0]))> items[ITEMS_PER_THREAD];
-#pragma unroll
-      for (int i = 0; i < ITEMS_PER_THREAD; ++i)
-      {
-        items[i] = transform_op(input_items[i]);
-      }
+      //       std::remove_reference_t<decltype(transform_op(input_items[0]))> items[ITEMS_PER_THREAD];
+      // #pragma unroll
+      //       for (int i = 0; i < ITEMS_PER_THREAD; ++i)
+      //       {
+      //         items[i] = transform_op(input_items[i]);
+      //       }
 
       InputT abs_max_val = -1;
 
 #pragma unroll
       for (int i = 0; i < ITEMS_PER_THREAD; ++i)
       {
-        auto abs_f  = fabs(items[i]);
+        auto abs_f  = fabs(input_items[i]);
         abs_max_val = (abs_f > abs_max_val) * abs_f + (abs_f <= abs_max_val) * abs_max_val;
       }
 
       // Reduce items within each thread stripe
       thread_aggregate =
-        internal::ThreadReduce(items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{}, abs_max_val);
+        internal::ThreadReduce(input_items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{}, abs_max_val);
     }
   }
 
