@@ -601,11 +601,49 @@ private:
     // }
     auto const total  = even_share.block_end;
     auto const stride = even_share.block_stride;
+    auto const offset = even_share.block_offset;
+    enum
+    {
+      WORDS = ITEMS_PER_THREAD / VECTOR_LOAD_LENGTH
+    };
 
 #pragma unroll
-    for (auto i = even_share.block_offset; i < total; i += stride)
+    for (auto i = offset; i < total; i += stride)
     {
-      ConsumeTileHelp<false>(thread_aggregate, i, Int2Type<true>(), Int2Type<true>{}, Int2Type<true>{});
+      // ConsumeTileHelp<false>(thread_aggregate, i, Int2Type<true>(), Int2Type<true>{}, Int2Type<true>{});
+      // Fabricate a vectorized input iterator
+      InputT* d_in_unqualified = const_cast<InputT*>(d_in) + i + (threadIdx.x * VECTOR_LOAD_LENGTH);
+      CacheModifiedInputIterator<AgentReducePolicy::LOAD_MODIFIER, VectorT, OffsetT> d_vec_in(
+        reinterpret_cast<VectorT*>(d_in_unqualified));
+
+      // Load items as vector items
+      InputT input_items[ITEMS_PER_THREAD];
+      VectorT* vec_items = reinterpret_cast<VectorT*>(input_items);
+#pragma unroll
+      for (int i = 0; i < WORDS; ++i)
+      {
+        vec_items[i] = d_vec_in[BLOCK_THREADS * i];
+      }
+
+      std::remove_reference_t<decltype(transform_op(input_items[0]))> items[ITEMS_PER_THREAD];
+#pragma unroll
+      for (int i = 0; i < ITEMS_PER_THREAD; ++i)
+      {
+        items[i] = transform_op(input_items[i]);
+      }
+
+      InputT abs_max_val = -1;
+
+#pragma unroll
+      for (int i = 0; i < ITEMS_PER_THREAD; ++i)
+      {
+        auto abs_f  = fabs(items[i]);
+        abs_max_val = fmax(abs_f, abs_max_val);
+      }
+
+      // Reduce items within each thread stripe
+      thread_aggregate =
+        internal::ThreadReduce(items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{}, abs_max_val);
     }
   }
 
