@@ -98,7 +98,7 @@ __device__ __host__ __forceinline__ constexpr T custom_ldexp(T arg)
   }
   while (exp < 0)
   {
-    arg /= 2;
+    arg /= 2.0;
     ++exp;
   }
 

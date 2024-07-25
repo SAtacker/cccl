@@ -1673,6 +1673,18 @@ struct DispatchSegmentedReduce : SelectedPolicy
 namespace detail
 {
 
+// Add two RFA together (used by CUB)
+template <class Accumulator>
+__host__ __device__ std::enable_if_t<
+  std::is_same_v<Accumulator, detail::ReproducibleFloatingAccumulator<typename Accumulator::ftype, Accumulator::FOLD>>,
+  Accumulator>
+operator+(const Accumulator& lhs, const Accumulator& rhs)
+{
+  Accumulator rtn = lhs;
+  rtn += rhs;
+  return rtn;
+}
+
 namespace rfa_detail
 {
 template <typename ReductionOpT, typename InitT, typename InputIteratorT>
@@ -1727,7 +1739,273 @@ struct deterministic_sum_t
   }
 };
 
+//////////// RFA
+static constexpr int grid_size  = 160; // blocks per grid
+static constexpr int block_size = 512; // threads per block
+static constexpr int M          = 4;
+
+template <int block_size, class T>
+__device__ static auto block_sum(T value)
+{
+  // Specialize BlockReduce for a 1D block of 128 threads of type int
+  using BlockReduce = cub::BlockReduce<T, block_size>;
+  // Allocate shared memory for BlockReduce
+  __shared__ typename BlockReduce::TempStorage temp_storage;
+  // Compute the block-wide sum for thread0
+  return BlockReduce(temp_storage).Sum(value);
+}
+
+template <int block_size, class T, class index_t>
+__device__ static inline void rfa_reduce(T* result, T* partial, T& value, index_t tid)
+{
+  static __device__ unsigned int count = 0;
+  if constexpr (grid_size == 1)
+  {
+    auto aggregate = block_sum<block_size>(value);
+    if (tid == 0)
+    {
+      *result = aggregate;
+    }
+  }
+  else
+  {
+    __shared__ bool is_last_block_done;
+    auto aggregate = block_sum<block_size>(value);
+
+    if (threadIdx.x == 0)
+    {
+      partial[blockIdx.x] = aggregate; // non-coalesced write
+      __threadfence(); // flush result
+
+      // increment global block counter
+      auto value         = atomicInc(&count, gridDim.x);
+      is_last_block_done = (value == gridDim.x - 1);
+    }
+
+    __syncthreads();
+
+    // finish reduction if last block
+    if (is_last_block_done)
+    {
+      auto i = threadIdx.x;
+      T sum  = {};
+      while (i < gridDim.x)
+      {
+        sum += const_cast<T&>(static_cast<volatile T*>(partial)[i]); // non-coalesced read
+        i += blockDim.x;
+      }
+
+      auto aggregate = block_sum<block_size>(sum);
+      if (threadIdx.x == 0)
+      {
+        *result = aggregate;
+      }
+
+      count = 0; // reset counter
+    }
+  }
+}
+
+template <class T>
+static inline auto rfa_reduce(const T&);
+template <>
+__host__ __device__ inline auto rfa_reduce(const float& x)
+{
+  return x;
+}
+template <>
+__host__ __device__ inline auto rfa_reduce(const double& x)
+{
+  return x;
+}
+template <>
+__host__ __device__ inline auto rfa_reduce(const float4& x)
+{
+  return x.x + x.y + x.z + x.w;
+}
+template <>
+__host__ __device__ inline auto rfa_reduce(const float2& x)
+{
+  return x.x + x.y;
+}
+template <>
+__host__ __device__ inline auto rfa_reduce(const double2& x)
+{
+  return x.x + x.y;
+}
+
+template <int block_size, class T, class RFA_t>
+CUB_DETAIL_KERNEL_ATTRIBUTES static void rfa_kernel_many(RFA_t* result, RFA_t* partial, const T* const x, size_t N)
+{
+  // auto tid = blockDim.x * blockIdx.x + threadIdx.x;
+  // RFA_t rfa;
+
+  // // first do thread private reduction
+  // for (auto i = tid; i < N; i += M * blockDim.x * gridDim.x)
+  // {
+  //   T y[M] = {};
+  //   for (auto j = 0; j < M; j++)
+  //   {
+  //     if (i + j * blockDim.x * gridDim.x < N)
+  //     {
+  //       y[j] = x[i + j * blockDim.x * gridDim.x];
+  //     }
+  //   }
+  //   rfa.add(y, M);
+  // }
+
+  // // Compute the block-wide sum for thread 0
+  // rfa_reduce<block_size>(result, partial, rfa, tid);
+  constexpr int BinLength = RFA_t::MAXINDEX + RFA_t::MAXFOLD;
+
+  typename RFA_t::ftype* shared_bins = detail::get_shared_bin_array<RFA_t::ftype, BinLength>();
+#pragma unroll
+  for (int index = 0; index < BinLength; ++index)
+  {
+    shared_bins[index] = detail::RFA_bins<typename RFA_t::ftype>::initialize_bins(index);
+  }
+
+  auto tid = blockDim.x * blockIdx.x + threadIdx.x;
+  RFA_t rfa;
+
+  // first do thread private reduction
+  for (auto i = tid; i < N; i += blockDim.x * gridDim.x)
+  {
+    rfa += x[i];
+  }
+
+  // Compute the block-wide sum for thread 0
+  rfa_reduce<block_size>(result, partial, rfa, tid);
+}
+
+namespace rfa_detail
+{
+template <class T>
+struct get_vector_type
+{};
+template <>
+struct get_vector_type<double>
+{
+  using type = double2;
+};
+template <>
+struct get_vector_type<float>
+{
+  using type = float4;
+};
 } // namespace rfa_detail
+
+template <class T>
+using rfa_vector_t = typename rfa_detail::get_vector_type<T>::type;
+
+template <class T>
+static inline auto rfa_vector_size()
+{
+  return sizeof(rfa_vector_t<T>) / sizeof(T);
+}
+
+template <class FloatType, class RFA_t>
+CUB_RUNTIME_FUNCTION _CCCL_VISIBILITY_HIDDEN _CCCL_FORCEINLINE void
+bitwise_deterministic_summation_many(RFA_t* result_d, RFA_t* partial_d, const FloatType* vec_d, std::size_t num_items)
+{
+  nvtx3::scoped_range r{__func__};
+
+  auto* x   = reinterpret_cast<const rfa_vector_t<FloatType>*>(vec_d);
+  auto size = num_items / rfa_vector_size<FloatType>();
+
+  rfa_kernel_many<block_size><<<grid_size, block_size>>>(result_d, partial_d, x, size);
+  cudaDeviceSynchronize();
+}
+
+} // namespace rfa_detail
+
+template <typename Float, typename ActivePolicyT, typename KernelPtr>
+CUB_RUNTIME_FUNCTION _CCCL_VISIBILITY_HIDDEN _CCCL_FORCEINLINE cudaError_t
+init_rfa(void* d_temp_storage, size_t& temp_storage_bytes, KernelPtr kernel_ptr)
+{
+  int device_ordinal;
+  auto error = CubDebug(cudaGetDevice(&device_ordinal));
+  if (cudaSuccess != error)
+  {
+    return error;
+  }
+
+  // Get SM count
+  int sm_count;
+  error = CubDebug(cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, device_ordinal));
+  if (cudaSuccess != error)
+  {
+    return error;
+  }
+
+  // Init regular kernel configuration
+  KernelConfig reduce_config;
+  error = CubDebug(reduce_config.Init<typename ActivePolicyT::MaxPolicy::ReducePolicy>(kernel_ptr));
+  if (cudaSuccess != error)
+  {
+    return error;
+  }
+
+  int reduce_device_occupancy = reduce_config.sm_occupancy * sm_count;
+
+  // Even-share work distribution
+  int max_blocks             = reduce_device_occupancy * CUB_SUBSCRIPTION_FACTOR(0);
+  void* allocations[1]       = {};
+  size_t allocation_sizes[1] = {
+    max_blocks * sizeof(Float) // bytes needed for privatized block
+                               // reductions
+  };
+
+  // Alias the temporary allocations from the single storage blob (or
+  // compute the necessary size of the blob)
+  error = CubDebug(AliasTemporaries(d_temp_storage, temp_storage_bytes, allocations, allocation_sizes));
+  if (cudaSuccess != error)
+  {
+    return error;
+  }
+
+  return cudaSuccess;
+}
+
+template <typename SelectedPolicy,
+          typename deterministic_accum_t,
+          typename accum_t,
+          typename InputIteratorT,
+          typename OffsetT,
+          typename OutputIteratorT>
+CUB_RUNTIME_FUNCTION _CCCL_VISIBILITY_HIDDEN _CCCL_FORCEINLINE cudaError_t rfa_function(
+  void* d_temp_storage,
+  size_t& temp_storage_bytes,
+  InputIteratorT d_in,
+  OffsetT num_items,
+  OutputIteratorT d_out,
+  deterministic_accum_t* rfa_result_d,
+  deterministic_accum_t* rfa_partial_d)
+{
+  // Get device ordinal
+  auto err = init_rfa<accum_t, SelectedPolicy>(
+    d_temp_storage,
+    temp_storage_bytes,
+    rfa_detail::rfa_kernel_many<SelectedPolicy::MaxPolicy::ReducePolicy::BLOCK_THREADS, accum_t, deterministic_accum_t>);
+  if (err != cudaSuccess)
+  {
+    return err;
+  }
+  if (d_temp_storage == nullptr)
+  {
+    return cudaSuccess;
+  }
+
+  static_assert(std::is_same_v<float, accum_t> || std::is_same_v<double, accum_t>);
+  if (d_in == nullptr)
+  {
+    return cudaErrorInvalidDevicePointer;
+  }
+  rfa_detail::bitwise_deterministic_summation_many<accum_t>(rfa_result_d, rfa_partial_d, d_in, num_items);
+  d_out[0] = rfa_result_d->conv();
+
+  return cudaSuccess;
+}
 
 /******************************************************************************
  * Single-problem dispatch
@@ -1816,24 +2094,31 @@ struct DeterministicDispatchReduce : SelectedPolicy
                      deterministic_accum_t,
                      SelectedPolicy>;
 
-    OutputIteratorTransformT d_out_transformed = thrust::make_transform_output_iterator(d_out, AcumFloatTransformT{});
-
-    // cub::detail::RFA_bins<accum_t> bins;
-    // bins.initialize_bins();
+    // OutputIteratorTransformT d_out_transformed = thrust::make_transform_output_iterator(d_out,
+    // AcumFloatTransformT{}); cub::detail::RFA_bins<accum_t> bins; bins.initialize_bins();
     // memcpy(cub::detail::bin_host_buffer, &bins, sizeof(bins));
 
     // cudaMemcpyToSymbol(cub::detail::bin_device_buffer, &bins, sizeof(bins), 0, cudaMemcpyHostToDevice);
+    deterministic_accum_t* rfa_result_h;
+    deterministic_accum_t* rfa_result_d;
+    cudaMallocHost(&rfa_result_h, sizeof(deterministic_accum_t));
+    cudaHostGetDevicePointer(&rfa_result_d, rfa_result_h, 0);
+    // rfa partials
+    deterministic_accum_t* rfa_partial_d;
+    cudaMalloc(&rfa_partial_d, rfa_detail::grid_size * sizeof(deterministic_accum_t));
 
-    return dispatch_reduce_t::Dispatch(
-      d_temp_storage,
-      temp_storage_bytes,
-      d_in,
-      d_out_transformed,
-      num_items,
-      deterministic_add_t{},
-      init,
-      stream,
-      transform_op);
+    auto ret = rfa_function<SelectedPolicy, deterministic_accum_t, accum_t>(
+      d_temp_storage, temp_storage_bytes, d_in, num_items, d_out, rfa_result_d, rfa_partial_d);
+
+    cudaFree(rfa_partial_d);
+    cudaFreeHost(rfa_result_h);
+
+    if (d_temp_storage == nullptr || ret == cudaSuccess)
+    {
+      return cudaSuccess;
+    }
+
+    return ret;
   }
 };
 } // namespace detail
