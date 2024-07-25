@@ -1863,7 +1863,10 @@ CUB_DETAIL_KERNEL_ATTRIBUTES static void rfa_kernel_many(RFA_t* result, RFA_t* p
   for (int index = 0; index < BinLength; ++index)
   {
     shared_bins[index] = detail::RFA_bins<typename RFA_t::ftype>::initialize_bins(index);
+    // printf("%f\n", shared_bins[index]);
   }
+
+  CTA_SYNC();
 
   auto tid = blockDim.x * blockIdx.x + threadIdx.x;
   RFA_t rfa;
@@ -1886,7 +1889,7 @@ struct get_vector_type
 template <>
 struct get_vector_type<double>
 {
-  using type = double2;
+  using type = double4;
 };
 template <>
 struct get_vector_type<float>
@@ -1952,8 +1955,8 @@ init_rfa(void* d_temp_storage, size_t& temp_storage_bytes, KernelPtr kernel_ptr)
   int max_blocks             = reduce_device_occupancy * CUB_SUBSCRIPTION_FACTOR(0);
   void* allocations[1]       = {};
   size_t allocation_sizes[1] = {
-    max_blocks * sizeof(Float) // bytes needed for privatized block
-                               // reductions
+    max_blocks * sizeof(detail::ReproducibleFloatingAccumulator<Float>) // bytes needed for privatized block
+                                                                        // reductions
   };
 
   // Alias the temporary allocations from the single storage blob (or

@@ -1236,6 +1236,7 @@ public:
     binned_dmddeposit(static_cast<ftype>(x.y), 1);
     binned_dmddeposit(static_cast<ftype>(x.z), 1);
     binned_dmddeposit(static_cast<ftype>(x.w), 1);
+    binned_dmrenorm(1, 1);
     return *this;
   }
 
@@ -1246,6 +1247,7 @@ public:
     binned_dmddeposit(static_cast<ftype>(x.y), 1);
     binned_dmddeposit(static_cast<ftype>(x.z), 1);
     binned_dmddeposit(static_cast<ftype>(x.w), 1);
+    binned_dmrenorm(1, 1);
     return *this;
   }
 

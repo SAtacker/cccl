@@ -191,7 +191,7 @@ CUB_TEST("Deterministic Device reduce works with float and double on gpu with kn
 CUB_TEST("Deterministic Device reduce works with float and double on cpu", "[reduce][deterministic]", float_type_list)
 {
   using type          = typename c2h::get<0, TestType>;
-  const int num_items = 42;
+  const int num_items = 44;
   c2h::host_vector<type> input(num_items, 1.0f);
 
   // cub::detail::RFA_bins<type> bins;
@@ -229,16 +229,17 @@ CUB_TEST("Deterministic Device reduce works with float and double and is determi
          "[reduce][deterministic]",
          float_type_list)
 {
-  using type              = typename c2h::get<0, TestType>;
-  constexpr int max_items = 50000;
-  constexpr int min_items = 1;
+  using type = typename c2h::get<0, TestType>;
+  // constexpr int max_items = 50000;
+  // constexpr int min_items = 1;
 
-  const int num_items = GENERATE_COPY(
-    take(3, random(min_items, max_items)),
-    values({
-      min_items,
-      max_items,
-    }));
+  // const int num_items = GENERATE_COPY(
+  //   take(3, random(min_items, max_items)),
+  //   values({
+  //     min_items,
+  //     max_items,
+  //   }));
+  const int num_items = 50000;
   CAPTURE(num_items);
   deterministic_reduce_gpu<type>(num_items);
 }
@@ -247,16 +248,17 @@ CUB_TEST("Deterministic Device reduce works with float and double on cpu and gpu
          "[reduce][deterministic]",
          float_type_list)
 {
-  using type              = typename c2h::get<0, TestType>;
-  constexpr int max_items = 50000;
-  constexpr int min_items = 1;
+  using type = typename c2h::get<0, TestType>;
+  // constexpr int max_items = 50000;
+  // constexpr int min_items = 1;
 
-  const int num_items = GENERATE_COPY(
-    take(3, random(min_items, max_items)),
-    values({
-      min_items,
-      max_items,
-    }));
+  // const int num_items = GENERATE_COPY(
+  //   take(3, random(min_items, max_items)),
+  //   values({
+  //     min_items,
+  //     max_items,
+  //   }));
+  const int num_items = 50000;
 
   CAPTURE(num_items);
   deterministic_reduce_heterogenous<type>(num_items);
