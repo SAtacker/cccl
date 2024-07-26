@@ -643,7 +643,7 @@ private:
 
       // Reduce items within each thread stripe
       thread_aggregate =
-        internal::ThreadReduce(vec_items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{}, {abs_max_val});
+        internal::ThreadReduce(items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{}, abs_max_val);
     }
   }
 
