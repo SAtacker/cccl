@@ -635,7 +635,7 @@ private:
       InputT abs_max_val = items[0];
 
 #pragma unroll
-      for (int i = 0; i < ITEMS_PER_THREAD; ++i)
+      for (int i = 1; i < ITEMS_PER_THREAD; ++i)
       {
         auto abs_f  = fabs(items[i]);
         abs_max_val = fmax(abs_f, abs_max_val);
