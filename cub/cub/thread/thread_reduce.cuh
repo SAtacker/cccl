@@ -72,7 +72,6 @@ _CCCL_DEVICE _CCCL_FORCEINLINE AccumT ThreadReduceHelper(
 {
   AccumT retval = prefix;
 
-  constexpr int float4_inp_len = LENGTH / 4;
   // float4 float4_input[float4_inp_len + 1];
   // auto* float4_input           = reinterpret_cast<cub::CubVector<T, 4>*>(input);
 
@@ -86,7 +85,7 @@ _CCCL_DEVICE _CCCL_FORCEINLINE AccumT ThreadReduceHelper(
   //     retval.binned_dmddeposit(input[i].w, 1);
   //   }
 
-  retval.add(reinterpret_cast<float4*>(input), float4_inp_len, input_max);
+  retval.add(input, LENGTH, input_max);
 
   return retval;
 }

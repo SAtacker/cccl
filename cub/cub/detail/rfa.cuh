@@ -1194,6 +1194,8 @@ public:
     binned_dmdupdate(std::abs(max_abs_val), 1, 1);
     size_t count = 0;
     size_t N     = last - first;
+
+#pragma unroll
     for (; first != last; first++, count++)
     {
       binned_dmddeposit(static_cast<ftype>(*first), 1);
