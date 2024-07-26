@@ -610,19 +610,30 @@ private:
 #pragma unroll
     for (auto i = offset; i < total; i += stride)
     {
+      InputT* d_in_unqualified = const_cast<InputT*>(d_in) + i + (threadIdx.x * VECTOR_LOAD_LENGTH);
       // ConsumeTileHelp<false>(thread_aggregate, i, Int2Type<true>(), Int2Type<true>{}, Int2Type<true>{});
       // Fabricate a vectorized input iterator
-      InputT* d_in_unqualified = const_cast<InputT*>(d_in) + i + (threadIdx.x * VECTOR_LOAD_LENGTH);
-      CacheModifiedInputIterator<AgentReducePolicy::LOAD_MODIFIER, VectorT, OffsetT> d_vec_in(
-        reinterpret_cast<VectorT*>(d_in_unqualified));
-
-      // Load items as vector items
-      InputT input_items[ITEMS_PER_THREAD];
-      VectorT* vec_items = reinterpret_cast<VectorT*>(input_items);
-#pragma unroll
-      for (int i = 0; i < WORDS; ++i)
+      if constexpr (((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
+                      && std::is_same_v<InputIteratorT, const float*>)
+                     || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
+                         && std::is_same_v<InputIteratorT, const double*>) ))
       {
-        vec_items[i] = d_vec_in[BLOCK_THREADS * i];
+        CacheModifiedInputIterator<AgentReducePolicy::LOAD_MODIFIER, VectorT, OffsetT> d_vec_in(
+          reinterpret_cast<VectorT*>(d_in_unqualified));
+
+        // Load items as vector items
+        InputT input_items[ITEMS_PER_THREAD];
+        VectorT* vec_items = reinterpret_cast<VectorT*>(input_items);
+#pragma unroll
+        for (int i = 0; i < WORDS; ++i)
+        {
+          vec_items[i] = d_vec_in[BLOCK_THREADS * i];
+        }
+        thread_aggregate.add(input_items, ITEMS_PER_THREAD, 1e14);
+      }
+      else
+      {
+        thread_aggregate.add(d_in_unqualified, ITEMS_PER_THREAD, 1e14);
       }
 
       //       std::remove_reference_t<decltype(transform_op(input_items[0]))> items[ITEMS_PER_THREAD];
@@ -642,7 +653,6 @@ private:
       //       }
 
       // Reduce items within each thread stripe
-      thread_aggregate.add(input_items, ITEMS_PER_THREAD, 1e14);
     }
   }
 
@@ -661,7 +671,7 @@ private:
                   && std::is_same_v<InputIteratorT, const double*>) )>
       consume_full_tile_range_helper;
 
-    ConsumeFullTileRangeHelper(thread_aggregate, even_share, can_vectorize, consume_full_tile_range_helper);
+    ConsumeFullTileRangeHelper(thread_aggregate, even_share, can_vectorize, Int2Type<true>{});
   }
 };
 

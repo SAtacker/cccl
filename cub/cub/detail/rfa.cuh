@@ -1239,6 +1239,15 @@ public:
     add(input, input + N, max_abs_val);
   }
 
+  __host__ __device__ void add(ReproducibleFloatingAccumulator* other, const size_t N, const ftype max_abs_val)
+  {
+#pragma unroll
+    for (int i = 0; i < N; ++i)
+    {
+      *this += other[i];
+    }
+  }
+
   /// Add @p N elements starting at @p input to the binned fp: [input, input+N)
   ///
   /// NOTE: A maximum absolute value is calculated, so two passes are made over
