@@ -467,8 +467,8 @@ struct AgentReduce
 
     // Extracting this into a function saves 8% of generated kernel size by allowing to reuse
     // the block reduction below. This also workaround hang in nvcc.
-    ConsumeFullTileRange(thread_aggregate, even_share, can_vectorize);
-
+    // ConsumeFullTileRange(thread_aggregate, even_share, can_vectorize);
+    ConsumeFullTileRangeHelper(thread_aggregate, even_share, can_vectorize, Int2Type<true>{});
     // Compute block-wide reduction (all threads have valid items)
     return BlockReduceT(temp_storage.reduce).Reduce(thread_aggregate, reduction_op);
   }
@@ -630,10 +630,6 @@ private:
           vec_items[i] = d_vec_in[BLOCK_THREADS * i];
         }
         thread_aggregate.add(input_items, ITEMS_PER_THREAD, 1e14);
-      }
-      else
-      {
-        thread_aggregate.add(d_in_unqualified, ITEMS_PER_THREAD, 1e14);
       }
 
       //       std::remove_reference_t<decltype(transform_op(input_items[0]))> items[ITEMS_PER_THREAD];
