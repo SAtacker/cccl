@@ -711,7 +711,7 @@ struct DeviceReducePolicy
   /// SM60
   struct Policy600 : ChainedPolicy<600, Policy600, Policy350>
   {
-    static constexpr int threads_per_block  = 512;
+    static constexpr int threads_per_block  = 256;
     static constexpr int items_per_thread   = 16;
     static constexpr int items_per_vec_load = 4;
 

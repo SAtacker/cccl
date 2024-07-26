@@ -610,7 +610,6 @@ private:
 #pragma unroll
     for (auto i = offset; i < total; i += stride)
     {
-      InputT* d_in_unqualified = const_cast<InputT*>(d_in) + i + (threadIdx.x * VECTOR_LOAD_LENGTH);
       // ConsumeTileHelp<false>(thread_aggregate, i, Int2Type<true>(), Int2Type<true>{}, Int2Type<true>{});
       // Fabricate a vectorized input iterator
       if constexpr (((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
@@ -618,6 +617,7 @@ private:
                      || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
                          && std::is_same_v<InputIteratorT, const double*>) ))
       {
+        InputT* d_in_unqualified = const_cast<InputT*>(d_in) + i + (threadIdx.x * VECTOR_LOAD_LENGTH);
         CacheModifiedInputIterator<AgentReducePolicy::LOAD_MODIFIER, VectorT, OffsetT> d_vec_in(
           reinterpret_cast<VectorT*>(d_in_unqualified));
 
@@ -631,7 +631,10 @@ private:
         }
         thread_aggregate.add(input_items, ITEMS_PER_THREAD, 1e14);
       }
-
+      else
+      {
+        thread_aggregate = reduction_op(thread_aggregate, transform_op(d_in[i + (threadIdx.x * VECTOR_LOAD_LENGTH)]));
+      }
       //       std::remove_reference_t<decltype(transform_op(input_items[0]))> items[ITEMS_PER_THREAD];
       // #pragma unroll
       //       for (int i = 0; i < ITEMS_PER_THREAD; ++i)
