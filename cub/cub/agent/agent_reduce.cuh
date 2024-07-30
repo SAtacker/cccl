@@ -647,6 +647,10 @@ private:
 
         thread_aggregate.set_max_abs_val(abs_max_val);
         thread_aggregate = internal::ThreadReduce(items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{});
+        if constexpr (ITEMS_PER_THREAD > AccumT::endurance())
+        {
+          thread_aggregate.renorm();
+        }
       }
       else if constexpr (((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>)
                           || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>) ))

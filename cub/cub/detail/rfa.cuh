@@ -1043,7 +1043,7 @@ public:
   }
 
   /// Return the endurance of the binned fp
-  __host__ __device__ inline constexpr int endurance() const
+  __host__ __device__ static inline constexpr int endurance()
   {
     return ENDURANCE;
   }
