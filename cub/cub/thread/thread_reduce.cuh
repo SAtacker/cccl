@@ -63,29 +63,18 @@ template <int LENGTH,
           typename PrefixT,
           typename AccumT = detail::accumulator_t<ReductionOp, PrefixT, T>>
 _CCCL_DEVICE _CCCL_FORCEINLINE AccumT ThreadReduceHelper(
-  T* input,
-  ReductionOp reduction_op,
-  PrefixT prefix,
-  Int2Type<LENGTH> /*length*/,
-  Int2Type<true> /* is rfa */,
-  T input_max = {})
+  T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH> /*length*/, Int2Type<true> /* is rfa */)
 {
   AccumT retval = prefix;
 
   // float4 float4_input[float4_inp_len + 1];
   // auto* float4_input           = reinterpret_cast<cub::CubVector<T, 4>*>(input);
 
-  // #pragma unroll
-  //   for (int i = 0; i < float4_inp_len; ++i)
-  //   {
-  //     // retval         = reduction_op(retval, float4_input);
-  //     retval.binned_dmddeposit(input[i].x, 1);
-  //     retval.binned_dmddeposit(input[i].y, 1);
-  //     retval.binned_dmddeposit(input[i].z, 1);
-  //     retval.binned_dmddeposit(input[i].w, 1);
-  //   }
-
-  retval.add(input, LENGTH, input_max);
+#pragma unroll
+  for (int i = 0; i < LENGTH; ++i)
+  {
+    retval.unsafe_add(input[i]);
+  }
 
   return retval;
 }
@@ -132,7 +121,7 @@ template <int LENGTH,
           typename PrefixT,
           typename AccumT = detail::accumulator_t<ReductionOp, PrefixT, T>>
 _CCCL_DEVICE _CCCL_FORCEINLINE AccumT
-ThreadReduce(T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH> /*length*/, T input_max = {})
+ThreadReduce(T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH> /*length*/)
 {
   constexpr bool is_rfa =
     (std::is_invocable_v<ReductionOp, detail::ReproducibleFloatingAccumulator<float>, float4>
@@ -141,7 +130,7 @@ ThreadReduce(T* input, ReductionOp reduction_op, PrefixT prefix, Int2Type<LENGTH
     && (std::is_same_v<AccumT, detail::ReproducibleFloatingAccumulator<float>>
         || std::is_same_v<AccumT, detail::ReproducibleFloatingAccumulator<double>>);
   return ThreadReduceHelper<LENGTH, T, ReductionOp, PrefixT, AccumT>(
-    input, reduction_op, prefix, Int2Type<LENGTH>{}, Int2Type<is_rfa>{}, input_max);
+    input, reduction_op, prefix, Int2Type<LENGTH>{}, Int2Type<is_rfa>{});
 }
 
 /**

@@ -1264,6 +1264,7 @@ public:
     }
 
     T max_abs_val = input[0];
+#pragma unroll
     for (size_t i = 0; i < N; i++)
     {
       max_abs_val = max(max_abs_val, std::abs(input[i]));

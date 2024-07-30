@@ -457,13 +457,13 @@ struct AgentReduce
   {
     AccumT thread_aggregate{};
 
-    // if (even_share.block_end - even_share.block_offset < TILE_ITEMS)
-    // {
-    //   // First tile isn't full (not all threads have valid items)
-    //   int valid_items = even_share.block_end - even_share.block_offset;
-    //   ConsumeTile<true>(thread_aggregate, even_share.block_offset, valid_items, Int2Type<false>(), can_vectorize);
-    //   return BlockReduceT(temp_storage.reduce).Reduce(thread_aggregate, reduction_op, valid_items);
-    // }
+    if (even_share.block_end - even_share.block_offset < TILE_ITEMS)
+    {
+      // First tile isn't full (not all threads have valid items)
+      int valid_items = even_share.block_end - even_share.block_offset;
+      ConsumeTile<true>(thread_aggregate, even_share.block_offset, valid_items, Int2Type<false>(), can_vectorize);
+      return BlockReduceT(temp_storage.reduce).Reduce(thread_aggregate, reduction_op, valid_items);
+    }
 
     // Extracting this into a function saves 8% of generated kernel size by allowing to reuse
     // the block reduction below. This also workaround hang in nvcc.
@@ -482,11 +482,11 @@ struct AgentReduce
   {
     GridEvenShare<OffsetT> even_share;
     even_share.template BlockInit<TILE_ITEMS>(block_offset, block_end);
-    constexpr bool rfa_enable_vectorization =
-      (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
-       && std::is_same_v<InputIteratorT, const float*>)
-      || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
-          && std::is_same_v<InputIteratorT, const double*>);
+    // constexpr bool rfa_enable_vectorization =
+    //   (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
+    //    && std::is_same_v<InputIteratorT, const float*>)
+    //   || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
+    //       && std::is_same_v<InputIteratorT, const double*>);
 
     return ConsumeRange(even_share, Int2Type < true && ATTEMPT_VECTORIZATION > ());
   }
@@ -499,11 +499,11 @@ struct AgentReduce
   {
     // Initialize GRID_MAPPING_STRIP_MINE even-share descriptor for this thread block
     even_share.template BlockInit<TILE_ITEMS, GRID_MAPPING_STRIP_MINE>();
-    constexpr bool rfa_enable_vectorization =
-      (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
-       && std::is_same_v<InputIteratorT, const float*>)
-      || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
-          && std::is_same_v<InputIteratorT, const double*>);
+    // constexpr bool rfa_enable_vectorization =
+    //   (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>
+    //    && std::is_same_v<InputIteratorT, const float*>)
+    //   || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>
+    //       && std::is_same_v<InputIteratorT, const double*>);
 
     return ConsumeRange(even_share, Int2Type < true && ATTEMPT_VECTORIZATION > ());
   }
@@ -629,7 +629,29 @@ private:
         {
           vec_items[i] = d_vec_in[BLOCK_THREADS * i];
         }
-        thread_aggregate.add(input_items, ITEMS_PER_THREAD, 1e14);
+        std::remove_reference_t<decltype(transform_op(input_items[0]))> items[ITEMS_PER_THREAD];
+#pragma unroll
+        for (int i = 0; i < ITEMS_PER_THREAD; ++i)
+        {
+          items[i] = transform_op(input_items[i]);
+        }
+
+        InputT abs_max_val = items[0];
+
+#pragma unroll
+        for (int i = 1; i < ITEMS_PER_THREAD; ++i)
+        {
+          auto abs_f  = fabs(items[i]);
+          abs_max_val = fmax(abs_f, abs_max_val);
+        }
+
+        thread_aggregate.set_max_abs_val(abs_max_val);
+        thread_aggregate = internal::ThreadReduce(items, reduction_op, thread_aggregate, Int2Type<ITEMS_PER_THREAD>{});
+      }
+      else if constexpr (((std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<float>, AccumT>)
+                          || (std::is_same_v<cub::detail::ReproducibleFloatingAccumulator<double>, AccumT>) ))
+      {
+        thread_aggregate += d_in[i + (threadIdx.x * VECTOR_LOAD_LENGTH)];
       }
       else
       {
