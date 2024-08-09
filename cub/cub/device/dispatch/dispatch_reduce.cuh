@@ -180,7 +180,8 @@ __launch_bounds__(int(ChainedPolicyT::ActivePolicy::ReducePolicy::BLOCK_THREADS)
   OffsetT num_items,
   GridEvenShare<OffsetT> even_share,
   ReductionOpT reduction_op,
-  TransformOpT transform_op)
+  TransformOpT transform_op,
+  int)
 {
   // Thread block type for reducing input tiles
   using AgentReduceT =
@@ -257,7 +258,8 @@ __launch_bounds__(int(ChainedPolicyT::ActivePolicy::ReducePolicy::BLOCK_THREADS)
   OffsetT num_items,
   GridEvenShare<OffsetT> even_share,
   ReductionOpT reduction_op,
-  TransformOpT transform_op)
+  TransformOpT transform_op,
+  const int reduce_grid_size)
 {
   using BlockReduceT =
     BlockReduce<AccumT,
@@ -271,7 +273,7 @@ __launch_bounds__(int(ChainedPolicyT::ActivePolicy::ReducePolicy::BLOCK_THREADS)
   constexpr auto ITEMS_PER_THREAD = ChainedPolicyT::ActivePolicy::ReducePolicy::ITEMS_PER_THREAD;
   constexpr auto BLOCK_THREADS    = ChainedPolicyT::ActivePolicy::ReducePolicy::BLOCK_THREADS;
   constexpr auto TILE_SIZE        = BLOCK_THREADS * ITEMS_PER_THREAD;
-  const int GRID_DIM              = (num_items + TILE_SIZE - 1) / TILE_SIZE;
+  const int GRID_DIM              = reduce_grid_size;
   const int tid                   = BLOCK_THREADS * blockIdx.x + threadIdx.x;
 
   FloatType* shared_bins = detail::get_shared_bin_array<FloatType, BinLength>();
@@ -972,8 +974,34 @@ struct DispatchReduce : SelectedPolicy
     do
     {
       const auto tile_size = ActivePolicyT::ReducePolicy::BLOCK_THREADS * ActivePolicyT::ReducePolicy::ITEMS_PER_THREAD;
+      // Get device ordinal
+      int device_ordinal;
+      error = CubDebug(cudaGetDevice(&device_ordinal));
+      if (cudaSuccess != error)
+      {
+        break;
+      }
+
+      int sm_count;
+      error = CubDebug(cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, device_ordinal));
+      if (cudaSuccess != error)
+      {
+        break;
+      }
+
+      KernelConfig reduce_config;
+      error = CubDebug(reduce_config.Init<typename ActivePolicyT::ReducePolicy>(reduce_kernel));
+      if (cudaSuccess != error)
+      {
+        break;
+      }
+
+      const int reduce_device_occupancy = reduce_config.sm_occupancy * sm_count;
+      const int max_blocks              = reduce_device_occupancy * CUB_SUBSCRIPTION_FACTOR(0);
+      const int resulting_grid_size     = (num_items + tile_size - 1) / tile_size;
+
       // Get grid size for device_reduce_sweep_kernel
-      const int reduce_grid_size = (num_items + tile_size - 1) / tile_size;
+      const int reduce_grid_size = resulting_grid_size > max_blocks ? max_blocks : resulting_grid_size;
 
       // Temporary storage allocation requirements
       void* allocations[1]       = {};
@@ -1008,7 +1036,8 @@ struct DispatchReduce : SelectedPolicy
               static_cast<int>(num_items),
               GridEvenShare<OffsetT>{},
               reduction_op,
-              transform_op);
+              transform_op,
+              reduce_grid_size);
 
       // Check for failure to launch
       error = CubDebug(cudaPeekAtLastError());
