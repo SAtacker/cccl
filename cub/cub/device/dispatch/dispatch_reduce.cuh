@@ -271,6 +271,8 @@ __launch_bounds__(int(ChainedPolicyT::ActivePolicy::ReducePolicy::BLOCK_THREADS)
   constexpr auto ITEMS_PER_THREAD = ChainedPolicyT::ActivePolicy::ReducePolicy::ITEMS_PER_THREAD;
   constexpr auto BLOCK_THREADS    = ChainedPolicyT::ActivePolicy::ReducePolicy::BLOCK_THREADS;
   constexpr auto TILE_SIZE        = BLOCK_THREADS * ITEMS_PER_THREAD;
+  const int GRID_DIM              = (num_items + TILE_SIZE - 1) / TILE_SIZE;
+  const int tid                   = BLOCK_THREADS * blockIdx.x + threadIdx.x;
 
   FloatType* shared_bins = detail::get_shared_bin_array<FloatType, BinLength>();
 
@@ -283,33 +285,42 @@ __launch_bounds__(int(ChainedPolicyT::ActivePolicy::ReducePolicy::BLOCK_THREADS)
   CTA_SYNC();
 
   AccumT thread_aggregate{};
-  FloatType items[ITEMS_PER_THREAD] = {};
+  int count = 0;
 
 #pragma unroll
-  for (int i = 0; i < ITEMS_PER_THREAD; ++i)
+  for (int i = tid; i < num_items; i += ITEMS_PER_THREAD * GRID_DIM * BLOCK_THREADS, count++)
   {
-    const auto idx = i * BLOCK_THREADS + threadIdx.x + TILE_SIZE * blockIdx.x;
-    if (idx >= num_items)
+    FloatType items[ITEMS_PER_THREAD] = {};
+    for (int j = 0; j < ITEMS_PER_THREAD; j++)
     {
-      continue;
+      const int idx = i + j * GRID_DIM * BLOCK_THREADS;
+      if (idx < num_items)
+      {
+        items[j] = transform_op(d_in[idx]);
+      }
     }
-    items[i] = transform_op(d_in[idx]);
-  }
-  FloatType abs_max = fabs(items[0]);
+    FloatType abs_max = fabs(items[0]);
 
 #pragma unroll
-  for (auto i = 1; i < ITEMS_PER_THREAD; i++)
-  {
-    abs_max = fmax(fabs(items[i]), abs_max);
-  }
+    for (auto j = 1; j < ITEMS_PER_THREAD; j++)
+    {
+      abs_max = fmax(fabs(items[j]), abs_max);
+    }
 
-  thread_aggregate.set_max_val(abs_max);
-
+    thread_aggregate.set_max_val(abs_max);
 #pragma unroll
-  for (auto i = 0; i < ITEMS_PER_THREAD; i++)
-  {
-    thread_aggregate.unsafe_add(items[i]);
+    for (auto j = 0; j < ITEMS_PER_THREAD; j++)
+    {
+      thread_aggregate.unsafe_add(items[j]);
+
+      if ((count + 1) * (j + 1) >= thread_aggregate.endurance())
+      {
+        thread_aggregate.renorm();
+        count = 0;
+      }
+    }
   }
+
   AccumT block_aggregate = BlockReduceT(temp_storage).Reduce(thread_aggregate, [](AccumT lhs, AccumT rhs) -> AccumT {
     AccumT rtn = lhs;
     rtn += rhs;
