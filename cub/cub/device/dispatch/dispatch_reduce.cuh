@@ -290,7 +290,7 @@ __launch_bounds__(int(ChainedPolicyT::ActivePolicy::ReducePolicy::BLOCK_THREADS)
   int count = 0;
 
 #pragma unroll
-  for (int i = tid; i < num_items; i += ITEMS_PER_THREAD * GRID_DIM * BLOCK_THREADS, count++)
+  for (int i = tid; i < num_items; i += ITEMS_PER_THREAD * GRID_DIM * BLOCK_THREADS)
   {
     FloatType items[ITEMS_PER_THREAD] = {};
     for (int j = 0; j < ITEMS_PER_THREAD; j++)
@@ -314,8 +314,8 @@ __launch_bounds__(int(ChainedPolicyT::ActivePolicy::ReducePolicy::BLOCK_THREADS)
     for (auto j = 0; j < ITEMS_PER_THREAD; j++)
     {
       thread_aggregate.unsafe_add(items[j]);
-
-      if ((count + 1) * (j + 1) >= thread_aggregate.endurance())
+      count++;
+      if (count >= thread_aggregate.endurance())
       {
         thread_aggregate.renorm();
         count = 0;
