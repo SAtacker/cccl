@@ -56,8 +56,6 @@ using std::array;
 using std::max;
 using std::min;
 #else
-#  include <cub/util_type.cuh>
-
 #  include <cuda/std/__algorithm_>
 #  include <cuda/std/array>
 using cuda::std::array;
@@ -86,73 +84,6 @@ static __device__ Float* get_shared_bin_array()
 {
   static __shared__ Float bin_computed_array[LEN];
   return bin_computed_array;
-}
-
-// Impl taken from https://www.boost.org/doc/libs/1_85_0/boost/math/ccmath/ldexp.hpp
-template <typename T, int exp_arg>
-__device__ __host__ __forceinline__ constexpr T custom_ldexp(T arg)
-{
-  int exp = exp_arg;
-  while (exp > 0)
-  {
-    arg *= 2;
-    --exp;
-  }
-  while (exp < 0)
-  {
-    arg /= 2;
-    ++exp;
-  }
-
-  return arg;
-}
-
-// impl taken from https://www.boost.org/doc/libs/1_85_0/boost/math/ccmath/frexp.hpp
-
-template <typename Real>
-__device__ __host__ __forceinline__ constexpr Real frexp_zero_impl(Real arg, int* exp)
-{
-  *exp = 0;
-  return arg;
-}
-
-template <typename Real>
-__device__ __host__ __forceinline__ constexpr Real frexp_impl(Real arg, int* exp)
-{
-  const bool negative_arg = (arg < Real(0));
-
-  Real f                    = negative_arg ? -arg : arg;
-  int e2                    = 0;
-  constexpr Real two_pow_32 = Real(4294967296);
-
-  while (f >= two_pow_32)
-  {
-    f = f / two_pow_32;
-    e2 += 32;
-  }
-
-  while (f >= Real(1))
-  {
-    f = f / Real(2);
-    ++e2;
-  }
-
-  if (exp != nullptr)
-  {
-    *exp = e2;
-  }
-
-  return !negative_arg ? f : -f;
-}
-
-template <typename Real, std::enable_if_t<!std::is_integral_v<Real>, bool> = true>
-__device__ __host__ __forceinline__ constexpr Real frexp_custom(Real arg, int* exp)
-{
-  return arg == Real(0)  ? frexp_zero_impl(arg, exp)
-       : arg == Real(-0) ? frexp_zero_impl(arg, exp)
-       : std::isinf(arg) ? frexp_zero_impl(arg, exp)
-       : std::isnan(arg) ? frexp_zero_impl(arg, exp)
-                         : frexp_impl(arg, exp);
 }
 
 template <class T>
@@ -184,39 +115,7 @@ inline static auto abs_max(const T&);
 template <>
 __host__ __device__ auto abs_max(const float4& x)
 {
-  auto xx   = x.x;
-  auto xy   = x.y;
-  auto xz   = x.z;
-  auto xw   = x.w;
-  auto xy_m = fmaxf(fabs(xx), fabs(xy));
-  auto wz_m = fmaxf(fabs(xw), fabs(xz));
-  return fmaxf(xy_m, wz_m);
-}
-
-template <>
-__host__ __device__ auto abs_max(const cub::CubVector<float, 4>& x)
-{
-  auto xx   = x.x;
-  auto xy   = x.y;
-  auto xz   = x.z;
-  auto xw   = x.w;
-  auto xy_m = fmaxf(fabs(xx), fabs(xy));
-  auto wz_m = fmaxf(fabs(xw), fabs(xz));
-
-  return fmaxf(xy_m, wz_m);
-}
-
-template <>
-__host__ __device__ auto abs_max(const cub::CubVector<double, 4>& x)
-{
-  auto xx   = x.x;
-  auto xy   = x.y;
-  auto xz   = x.z;
-  auto xw   = x.w;
-  auto xy_m = fmax(fabs(xx), fabs(xy));
-  auto wz_m = fmax(fabs(xw), fabs(xz));
-
-  return fmax(xy_m, wz_m);
+  return fmax(fmaxf(fabs(x.x), fabs(x.y)), fmax(fabs(x.z), fabs(x.w)));
 }
 
 template <>
@@ -235,47 +134,6 @@ template <>
 __host__ __device__ auto abs_max(const float2& x)
 {
   return fmax(fabs(x.x), fabs(x.y));
-}
-
-template <std::size_t N>
-struct num
-{
-  static const constexpr auto value = N;
-};
-
-template <class F, std::size_t... Is>
-__host__ __device__ static inline constexpr void for_(F func, std::index_sequence<Is...>)
-{
-  using expander = int[];
-  (void) expander{0, ((void) func(num<Is>{}), 0)...};
-}
-
-template <std::size_t N, typename F>
-__host__ __device__ static inline constexpr void for_(F func)
-{
-  for_(func, std::make_index_sequence<N>());
-}
-
-template <class T, T x, class F>
-void transparent(F f)
-{
-  f();
-}
-
-template <bool B>
-constexpr void my_assert()
-{
-  static_assert(B, "oh no");
-}
-
-template <int X>
-void f()
-{
-  transparent<int, X + 7>([] {
-    transparent<long, X * X * X>([] {
-      my_assert<X + 10 == -89>();
-    });
-  });
 }
 
 template <class ftype>
@@ -298,63 +156,16 @@ struct RFA_bins
   //   return bins_[d];
   // }
 
-  template <int current_index = MAXINDEX + MAXFOLD>
-  __device__ __host__ static inline constexpr ftype initialize_bins(int index)
+  __device__ __host__ static ftype initialize_bins(int index)
   {
-    // array<ftype, 23> bins =
-    //
-    // {2.552117751907038476e+38,6.3802943797675961899e+37,7.7884452878022414428e+33,9.5073795017117205112e+29,1.1605687868300440077e+26,1.4167099448608935641e+22,1729382256910270464,211106232532992,25769803776,3145728,384,0.046875,5.7220458984375e-06,6.9849193096160888672e-10,8.5265128291212022305e-14,1.0408340855860842566e-17,1.2705494208814505086e-21,1.5509636485369268904e-25,1.893266172530428333e-29,2.3111159332646830237e-33,2.8211864419734900191e-37,3.4438311059246704335e-41,4.2038953929744512128e-45};
-    if constexpr (current_index == 0)
+    if (index == 0)
     {
-      if constexpr (std::is_same_v<ftype, float>)
-      {
-        return static_cast<ftype>(custom_ldexp<ftype, MAX_EXP>(static_cast<ftype>(0.75)));
-      }
-      else
-      {
-        return static_cast<ftype>(2.0 * custom_ldexp<ftype, MAX_EXP - 1>(static_cast<ftype>(0.75)));
-      }
+      return ldexpf(0.75f, MAX_EXP);
     }
     else
     {
-      if (current_index == index)
-      {
-        return static_cast<ftype>(
-          custom_ldexp<ftype, MAX_EXP + MANT_DIG - BIN_WIDTH - current_index * BIN_WIDTH>(static_cast<ftype>(0.75)));
-      }
-      else
-      {
-        return initialize_bins<current_index - 1>(index);
-      }
+      return ldexpf(0.75f, MAX_EXP + MANT_DIG - BIN_WIDTH - index * BIN_WIDTH);
     }
-
-    // if constexpr (index >= 23) return 0.00000000000000000000;
-
-    // return bins[index];
-  }
-
-  template <int index>
-  __device__ __host__ static inline constexpr ftype initialize_bins_constexpr_idx()
-  {
-    // array<ftype, 23> bins =
-    // {2.552117751907038476e+38,6.3802943797675961899e+37,7.7884452878022414428e+33,9.5073795017117205112e+29,1.1605687868300440077e+26,1.4167099448608935641e+22,1729382256910270464,211106232532992,25769803776,3145728,384,0.046875,5.7220458984375e-06,6.9849193096160888672e-10,8.5265128291212022305e-14,1.0408340855860842566e-17,1.2705494208814505086e-21,1.5509636485369268904e-25,1.893266172530428333e-29,2.3111159332646830237e-33,2.8211864419734900191e-37,3.4438311059246704335e-41,4.2038953929744512128e-45};
-    if constexpr (index == 0)
-    {
-      if constexpr (std::is_same_v<ftype, float>)
-      {
-        return static_cast<ftype>(custom_ldexp<ftype, MAX_EXP>(static_cast<ftype>(0.75)));
-      }
-      else
-      {
-        return static_cast<ftype>(2.0 * custom_ldexp<ftype, MAX_EXP - 1>(static_cast<ftype>(0.75)));
-      }
-    }
-
-    return static_cast<ftype>(
-      custom_ldexp<ftype, MAX_EXP + MANT_DIG - BIN_WIDTH - index * BIN_WIDTH>(static_cast<ftype>(0.75)));
-    // if constexpr (index >= 23) return 0.00000000000000000000;
-
-    // return bins[index];
   }
 };
 
@@ -414,7 +225,6 @@ private:
 
   /// Return a binned floating-point reference bin
 
-  template <int current_index = MAXINDEX + MAXFOLD>
   __host__ __device__ inline ftype binned_bins(int index) const
   {
 #ifdef __CUDA_ARCH__
@@ -613,7 +423,7 @@ private:
       }
       else
       {
-        frexp_custom(x, &exp);
+        frexpf(x, &exp);
         return min((MAX_EXP - exp) / BIN_WIDTH, MAXINDEX);
       }
     }
@@ -652,8 +462,8 @@ private:
     int X_index = binned_dindex(max_abs_val);
     if (ISZERO(primary(0)))
     {
-// constexpr auto bins = binned_bins(X_index);
-#pragma unroll
+      // constexpr auto bins = binned_bins(X_index);
+      _LIBCUDACXX_PRAGMA_UNROLL()
       for (int i = 0; i < FOLD; i++)
       {
         primary(i * incpriY) = binned_bins(i + X_index);
@@ -665,7 +475,7 @@ private:
       int shift = binned_index() - X_index;
       if (shift > 0)
       {
-#pragma unroll
+        _LIBCUDACXX_PRAGMA_UNROLL()
         for (int i = FOLD - 1; i >= 1; i--)
         {
           if (i < shift)
@@ -675,8 +485,8 @@ private:
           primary(i * incpriY) = primary((i - shift) * incpriY);
           carry(i * inccarY)   = carry((i - shift) * inccarY);
         }
-// constexpr auto const bins = binned_bins(X_index);
-#pragma unroll
+        // constexpr auto const bins = binned_bins(X_index);
+        _LIBCUDACXX_PRAGMA_UNROLL()
         for (int j = 0; j < FOLD; j++)
         {
           if (j >= shift)
@@ -719,7 +529,7 @@ private:
       M *= EXPANSION * 0.5;
       x += M;
       x += M;
-#pragma unroll
+      _LIBCUDACXX_PRAGMA_UNROLL()
       for (int i = 1; i < FOLD - 1; i++)
       {
         M  = primary(i * incpriY);
@@ -738,7 +548,7 @@ private:
     {
       ftype qd = x;
       auto& ql = get_bits(qd);
-#pragma unroll
+      _LIBCUDACXX_PRAGMA_UNROLL()
       for (int i = 0; i < FOLD - 1; i++)
       {
         M  = primary(i * incpriY);
@@ -769,7 +579,7 @@ private:
       return;
     }
 
-#pragma unroll
+    _LIBCUDACXX_PRAGMA_UNROLL()
     for (int i = 0; i < FOLD; i++)
     {
       auto tmp_renormd  = primary(i * incpriX);
@@ -828,8 +638,8 @@ private:
     // constexpr auto const bins = binned_bins(X_index);
     if (X_index <= (3 * MANT_DIG) / BIN_WIDTH)
     {
-      scale_down = custom_ldexp<ftype, 1 - (2 * MANT_DIG - BIN_WIDTH)>(0.5);
-      scale_up   = custom_ldexp<ftype, 1 - (2 * MANT_DIG - BIN_WIDTH)>(0.5);
+      scale_down = ldexpf(0.5f, 1 - (2 * MANT_DIG - BIN_WIDTH));
+      scale_up   = ldexpf(0.5f, 1 - (2 * MANT_DIG - BIN_WIDTH));
       scaled     = max(min(FOLD, (3 * MANT_DIG) / BIN_WIDTH - X_index), 0);
       if (X_index == 0)
       {
@@ -960,9 +770,9 @@ private:
     const auto shift   = Y_index - X_index;
     if (shift > 0)
     {
-// constexpr auto const bins = binned_bins(Y_index);
-// shift Y upwards and add X to Y
-#pragma unroll
+      // constexpr auto const bins = binned_bins(Y_index);
+      // shift Y upwards and add X to Y
+      _LIBCUDACXX_PRAGMA_UNROLL()
       for (int i = FOLD - 1; i >= 1; i--)
       {
         if (i < shift)
@@ -973,7 +783,7 @@ private:
           x.primary(i * incpriX) + (primary((i - shift) * incpriY) - binned_bins(i - shift + Y_index));
         carry(i * inccarY) = x.carry(i * inccarX) + carry((i - shift) * inccarY);
       }
-#pragma unroll
+      _LIBCUDACXX_PRAGMA_UNROLL()
       for (int i = 0; i < FOLD; i++)
       {
         if (i == shift)
@@ -986,9 +796,9 @@ private:
     }
     else if (shift < 0)
     {
-// constexpr auto const bins = binned_bins(X_index);
-// shift X upwards and add X to Y
-#pragma unroll
+      // constexpr auto const bins = binned_bins(X_index);
+      // shift X upwards and add X to Y
+      _LIBCUDACXX_PRAGMA_UNROLL()
       for (int i = 0; i < FOLD; i++)
       {
         if (i < -shift)
@@ -1001,9 +811,9 @@ private:
     }
     else if (shift == 0)
     {
-// constexpr auto const bins = binned_bins(X_index);
-// add X to Y
-#pragma unroll
+      // constexpr auto const bins = binned_bins(X_index);
+      // add X to Y
+      _LIBCUDACXX_PRAGMA_UNROLL()
       for (int i = 0; i < FOLD; i++)
       {
         primary(i * incpriY) += x.primary(i * incpriX) - binned_bins(i + X_index);
@@ -1040,7 +850,7 @@ public:
   }
 
   /// Return the endurance of the binned fp
-  __host__ __device__ static inline constexpr int endurance()
+  __host__ __device__ inline constexpr int endurance() const
   {
     return ENDURANCE;
   }
@@ -1133,7 +943,7 @@ public:
     {
       // constexpr auto const bins = binned_bins(binned_index());
 
-#pragma unroll
+      _LIBCUDACXX_PRAGMA_UNROLL()
       for (int i = 0; i < FOLD; i++)
       {
         temp.primary(i * incpriX) =
@@ -1170,7 +980,7 @@ public:
     const double X = std::abs(max_abs_val);
     const double S = std::abs(binned_sum);
     return static_cast<ftype>(
-      max(X, custom_ldexp(0.5, MIN_EXP - 1)) * custom_ldexp(0.5, (1 - FOLD) * BIN_WIDTH + 1) * N
+      max(X, ldexpf(0.5f, MIN_EXP - 1)) * ldexpf(0.5f, (1 - FOLD) * BIN_WIDTH + 1) * N
       + ((7.0 * EPSILON) / (1.0 - 6.0 * std::sqrt(static_cast<double>(EPSILON)) - 7.0 * EPSILON)) * S);
   }
 
@@ -1191,8 +1001,6 @@ public:
     binned_dmdupdate(std::abs(max_abs_val), 1, 1);
     size_t count = 0;
     size_t N     = last - first;
-
-#pragma unroll
     for (; first != last; first++, count++)
     {
       binned_dmddeposit(static_cast<ftype>(*first), 1);
@@ -1236,15 +1044,6 @@ public:
     add(input, input + N, max_abs_val);
   }
 
-  __host__ __device__ void add(ReproducibleFloatingAccumulator* other, const size_t N, const ftype max_abs_val)
-  {
-#pragma unroll
-    for (int i = 0; i < N; ++i)
-    {
-      *this += other[i];
-    }
-  }
-
   /// Add @p N elements starting at @p input to the binned fp: [input, input+N)
   ///
   /// NOTE: A maximum absolute value is calculated, so two passes are made over
@@ -1261,7 +1060,6 @@ public:
     }
 
     T max_abs_val = input[0];
-#pragma unroll
     for (size_t i = 0; i < N; i++)
     {
       max_abs_val = max(max_abs_val, std::abs(input[i]));
@@ -1273,16 +1071,6 @@ public:
   /// Accumulate a float4 @p x into the binned fp.
   /// NOTE: Casts @p x to the type of the binned fp
   __host__ __device__ ReproducibleFloatingAccumulator& operator+=(const float4& x)
-  {
-    binned_dmdupdate(abs_max(x), 1, 1);
-    binned_dmddeposit(static_cast<ftype>(x.x), 1);
-    binned_dmddeposit(static_cast<ftype>(x.y), 1);
-    binned_dmddeposit(static_cast<ftype>(x.z), 1);
-    binned_dmddeposit(static_cast<ftype>(x.w), 1);
-    return *this;
-  }
-
-  __host__ __device__ ReproducibleFloatingAccumulator& operator+=(const cub::CubVector<ftype, 4>& x)
   {
     binned_dmdupdate(abs_max(x), 1, 1);
     binned_dmddeposit(static_cast<ftype>(x.x), 1);
@@ -1464,7 +1252,7 @@ public:
   /// This is intended to be used after a call to `set_max_abs_val()`
   __host__ __device__ void unsafe_add(const ftype x)
   {
-    binned_dmddeposit(static_cast<ftype>(x), 1);
+    binned_dmddeposit(x, 1);
   }
 
   /// Renormalizes the binned fp

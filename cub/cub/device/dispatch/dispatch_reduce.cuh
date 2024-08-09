@@ -310,10 +310,11 @@ __launch_bounds__(int(ChainedPolicyT::ActivePolicy::ReducePolicy::BLOCK_THREADS)
   {
     thread_aggregate.unsafe_add(items[i]);
   }
-
-  thread_aggregate.renorm();
-
-  AccumT block_aggregate = BlockReduceT(temp_storage).Reduce(thread_aggregate, reduction_op);
+  AccumT block_aggregate = BlockReduceT(temp_storage).Reduce(thread_aggregate, [](AccumT lhs, AccumT rhs) -> AccumT {
+    AccumT rtn = lhs;
+    rtn += rhs;
+    return rtn;
+  });
 
   // Output result
   if (threadIdx.x == 0)
@@ -477,8 +478,8 @@ CUB_DETAIL_KERNEL_ATTRIBUTES __launch_bounds__(
 {
   using BlockReduceT =
     BlockReduce<AccumT,
-                ChainedPolicyT::ActivePolicy::ReducePolicy::BLOCK_THREADS,
-                ChainedPolicyT::ActivePolicy::ReducePolicy::BLOCK_ALGORITHM>;
+                ChainedPolicyT::ActivePolicy::SingleTilePolicy::BLOCK_THREADS,
+                ChainedPolicyT::ActivePolicy::SingleTilePolicy::BLOCK_ALGORITHM>;
   // Shared memory storage
   __shared__ typename BlockReduceT::TempStorage temp_storage;
 
@@ -499,13 +500,14 @@ CUB_DETAIL_KERNEL_ATTRIBUTES __launch_bounds__(
   FloatType* shared_bins = detail::get_shared_bin_array<FloatType, BinLength>();
 
 #pragma unroll
-  for (int index = threadIdx.x; index < BinLength; index += ChainedPolicyT::ActivePolicy::ReducePolicy::BLOCK_THREADS)
+  for (int index = threadIdx.x; index < BinLength;
+       index += ChainedPolicyT::ActivePolicy::SingleTilePolicy::BLOCK_THREADS)
   {
     shared_bins[index] = detail::RFA_bins<FloatType>::initialize_bins(index);
   }
   CTA_SYNC();
 
-  constexpr auto BLOCK_THREADS = ChainedPolicyT::ActivePolicy::ReducePolicy::BLOCK_THREADS;
+  constexpr auto BLOCK_THREADS = ChainedPolicyT::ActivePolicy::SingleTilePolicy::BLOCK_THREADS;
 
   AccumT thread_aggregate{};
 
@@ -958,30 +960,6 @@ struct DispatchReduce : SelectedPolicy
     cudaError error = cudaSuccess;
     do
     {
-      // Get device ordinal
-      int device_ordinal;
-      error = CubDebug(cudaGetDevice(&device_ordinal));
-      if (cudaSuccess != error)
-      {
-        break;
-      }
-
-      // Get SM count
-      int sm_count;
-      error = CubDebug(cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, device_ordinal));
-      if (cudaSuccess != error)
-      {
-        break;
-      }
-
-      // Init regular kernel configuration
-      KernelConfig reduce_config;
-      error = CubDebug(reduce_config.Init<typename ActivePolicyT::ReducePolicy>(reduce_kernel));
-      if (cudaSuccess != error)
-      {
-        break;
-      }
-
       const auto tile_size = ActivePolicyT::ReducePolicy::BLOCK_THREADS * ActivePolicyT::ReducePolicy::ITEMS_PER_THREAD;
       // Get grid size for device_reduce_sweep_kernel
       const int reduce_grid_size = (num_items + tile_size - 1) / tile_size;
@@ -1011,20 +989,15 @@ struct DispatchReduce : SelectedPolicy
       // Alias the allocation for the privatized per-block reductions
       AccumT* d_block_reductions = (AccumT*) allocations[0];
 
-// Log device_reduce_sweep_kernel configuration
-#ifdef CUB_DETAIL_DEBUG_ENABLE_LOG
-      _CubLog("Invoking DeviceReduceKernel<<<%d, %d, 0, %lld>>>(), %d items "
-              "per thread, %d SM occupancy\n",
-              reduce_grid_size,
-              ActivePolicyT::ReducePolicy::BLOCK_THREADS,
-              (long long) stream,
-              ActivePolicyT::ReducePolicy::ITEMS_PER_THREAD,
-              reduce_config.sm_occupancy);
-#endif
-
       THRUST_NS_QUALIFIER::cuda_cub::launcher::triple_chevron(
         reduce_grid_size, ActivePolicyT::ReducePolicy::BLOCK_THREADS, 0, stream)
-        .doit(reduce_kernel, d_in, d_block_reductions, num_items, GridEvenShare<OffsetT>{}, reduction_op, transform_op);
+        .doit(reduce_kernel,
+              d_in,
+              d_block_reductions,
+              static_cast<int>(num_items),
+              GridEvenShare<OffsetT>{},
+              reduction_op,
+              transform_op);
 
       // Check for failure to launch
       error = CubDebug(cudaPeekAtLastError());
@@ -1034,20 +1007,11 @@ struct DispatchReduce : SelectedPolicy
       }
 
       // Sync the stream if specified to flush runtime errors
-      error = CubDebug(detail::DebugSyncStream(stream));
+      error = CubDebug(cudaDeviceSynchronize());
       if (cudaSuccess != error)
       {
         break;
       }
-
-// Log single_reduce_sweep_kernel configuration
-#ifdef CUB_DETAIL_DEBUG_ENABLE_LOG
-      _CubLog("Invoking DeviceReduceSingleTileKernel<<<1, %d, 0, %lld>>>(), "
-              "%d items per thread\n",
-              ActivePolicyT::SingleTilePolicy::BLOCK_THREADS,
-              (long long) stream,
-              ActivePolicyT::SingleTilePolicy::ITEMS_PER_THREAD);
-#endif
 
       // Invoke DeviceReduceSingleTileKernel
       THRUST_NS_QUALIFIER::cuda_cub::launcher::triple_chevron(
