@@ -27,6 +27,10 @@
 
 #include <cub/device/device_reduce.cuh>
 
+#include <thrust/host_vector.h>
+
+#include <random>
+
 #ifndef TUNE_BASE
 #  define TUNE_ITEMS_PER_VEC_LOAD (1 << TUNE_ITEMS_PER_VEC_LOAD_POW2)
 #endif
@@ -77,8 +81,18 @@ void reduce(nvbench::state& state, nvbench::type_list<T, OffsetT>)
 #endif // TUNE_BASE
 
   // Retrieve axis parameters
-  const auto elements         = static_cast<std::size_t>(state.get_int64("Elements{io}"));
-  thrust::device_vector<T> in = generate(elements);
+  const auto elements = static_cast<std::size_t>(state.get_int64("Elements{io}"));
+  double ref_max      = 1e14;
+
+  std::mt19937 gen(123456789);
+  std::uniform_real_distribution<double> distr(-ref_max, ref_max);
+  thrust::host_vector<double> floats;
+  for (std::size_t i = 0; i < elements; i++)
+  {
+    floats.push_back(distr(gen));
+  }
+
+  thrust::device_vector<T> in = floats;
   thrust::device_vector<T> out(1);
 
   input_it_t d_in   = thrust::raw_pointer_cast(in.data());
@@ -97,7 +111,7 @@ void reduce(nvbench::state& state, nvbench::type_list<T, OffsetT>)
   thrust::device_vector<nvbench::uint8_t> temp(temp_size);
   auto* temp_storage = thrust::raw_pointer_cast(temp.data());
 
-  state.exec(nvbench::exec_tag::no_batch, [&](nvbench::launch& launch) {
+  state.exec(nvbench::exec_tag::no_batch | nvbench::exec_tag::sync, [&](nvbench::launch& launch) {
     dispatch_t::Dispatch(
       temp_storage, temp_size, d_in, d_out, static_cast<offset_t>(elements), op_t{}, init_t{}, launch.get_stream());
   });

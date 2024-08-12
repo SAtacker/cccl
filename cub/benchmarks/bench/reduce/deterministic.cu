@@ -25,6 +25,10 @@
  *
  ******************************************************************************/
 
+#include <thrust/host_vector.h>
+
+#include <random>
+
 #include "cub/device/device_reduce.cuh"
 #include <nvbench/range.cuh>
 #include <nvbench/types.cuh>
@@ -81,10 +85,19 @@ void deterministic_sum(nvbench::state& state, nvbench::type_list<T>)
   using dispatch_t = cub::detail::DeterministicDispatchReduce<input_it_t, output_it_t, offset_t>;
 #endif // TUNE_BASE
 
-  const auto elements       = static_cast<T>(state.get_int64("Elements{io}"));
   const bit_entropy entropy = str_to_entropy(state.get_string("Entropy"));
+  const auto elements       = static_cast<std::size_t>(state.get_int64("Elements{io}"));
+  double ref_max            = 1e14;
 
-  thrust::device_vector<T> in = generate(elements, entropy);
+  std::mt19937 gen(123456789);
+  std::uniform_real_distribution<double> distr(-ref_max, ref_max);
+  thrust::host_vector<double> floats;
+  for (auto i = 0; i < elements; i++)
+  {
+    floats.push_back(distr(gen));
+  }
+
+  thrust::device_vector<T> in = floats;
   thrust::device_vector<T> out(1);
 
   input_it_t d_in   = thrust::raw_pointer_cast(in.data());
