@@ -105,10 +105,10 @@ void deterministic_sum(nvbench::state& state, nvbench::type_list<T>)
   });
 }
 
-using types = nvbench::type_list<float, double>;
+using types = nvbench::type_list<float>;
 
 NVBENCH_BENCH_TYPES(deterministic_sum, NVBENCH_TYPE_AXES(types))
   .set_name("base")
   .set_type_axes_names({"T{ct}"})
-  .add_int64_power_of_two_axis("Elements{io}", nvbench::range(16, 28, 4))
-  .add_string_axis("Entropy", {"1.000", "0.544", "0.201"});
+  .add_int64_power_of_two_axis("Elements{io}", nvbench::range(4, 28, 2))
+  .add_string_axis("Entropy", {"1.000"});
